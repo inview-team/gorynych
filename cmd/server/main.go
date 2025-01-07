@@ -9,10 +9,7 @@ import (
 
 func main() {
 	ctx := context.Background()
-	yandexStorage, _ := yandex.New(ctx, yandex.Credentials{
-		AccessKeyID:     "...",
-		SecretAccessKey: "...",
-	})
+	yandexStorage, _ := yandex.New(ctx)
 
 	buckets, err := yandexStorage.Bucket.List(ctx)
 	if err != nil {
