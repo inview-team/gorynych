@@ -1,16 +1,16 @@
 package application
 
 import (
-	"github.com/inview-team/gorynych/internal/application/object"
 	"github.com/inview-team/gorynych/internal/entities"
+	"github.com/inview-team/gorynych/internal/service/object"
 )
 
 type Application struct {
-	ObjectApplication object.Application
+	ObjectService object.Service
 }
 
 func New(ObjectRepository entities.ObjectRepository) *Application {
 	return &Application{
-		ObjectApplication: *object.New(ObjectRepository),
+		ObjectService: *object.New(ObjectRepository),
 	}
 }

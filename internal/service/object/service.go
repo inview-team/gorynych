@@ -2,12 +2,15 @@ package object
 
 import "github.com/inview-team/gorynych/internal/entities"
 
-type Application struct {
+type Commands struct {
+}
+
+type Service struct {
 	oRepo entities.ObjectRepository
 }
 
-func New(oRepo entities.ObjectRepository) *Application {
-	return &Application{
+func New(oRepo entities.ObjectRepository) *Service {
+	return &Service{
 		oRepo: oRepo,
 	}
 }

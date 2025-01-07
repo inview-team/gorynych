@@ -1,11 +1,22 @@
 package main
 
 import (
-	"github.com/inview-team/gorynych/internal/application"
+	"context"
+	"fmt"
+
 	"github.com/inview-team/gorynych/pkg/provider/yandex"
 )
 
 func main() {
-	objectRepo := yandex.New()
-	app := application.New(objectRepo)
+	ctx := context.Background()
+	yandexStorage, _ := yandex.New(ctx, yandex.Credentials{
+		AccessKeyID:     "...",
+		SecretAccessKey: "...",
+	})
+
+	buckets, err := yandexStorage.Bucket.List(ctx)
+	if err != nil {
+		fmt.Print(err)
+	}
+	fmt.Print(buckets)
 }

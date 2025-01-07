@@ -1,19 +1,14 @@
 package entities
 
+import "context"
+
 type Bucket struct {
 	ID       BucketID
 	Name     string
-	Status   Status
-	Provider Provider
+	Provider string
 }
 
 type BucketID string
-
-type Provider int
-
-const (
-	Yandex Provider = iota + 1
-)
 
 type Status int
 
@@ -21,3 +16,7 @@ const (
 	Available Status = iota + 1
 	UnAvailable
 )
+
+type BucketRepository interface {
+	List(ctx context.Context) ([]*Bucket, error)
+}
