@@ -9,8 +9,8 @@ type Application struct {
 	ObjectService object.Service
 }
 
-func New(ObjectRepository entities.ObjectRepository) *Application {
+func New(repositories []*entities.ObjectRepository) *Application {
 	return &Application{
-		ObjectService: *object.New(ObjectRepository),
+		ObjectService: *object.New(repositories),
 	}
 }
