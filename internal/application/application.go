@@ -1,16 +1,15 @@
 package application
 
 import (
-	"github.com/inview-team/gorynych/internal/entities"
-	"github.com/inview-team/gorynych/internal/service/object"
+	"github.com/inview-team/gorynych/internal/domain/service"
 )
 
 type Application struct {
-	ObjectService object.Service
+	UploadService *service.UploadService
 }
 
-func New(repositories []*entities.ObjectRepository) *Application {
+func New() *Application {
 	return &Application{
-		ObjectService: *object.New(repositories),
+		service.New(10000000000000000),
 	}
 }
