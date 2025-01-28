@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/arks-world/backend/internal/application"
-	"github.com/inview-team/gorynych/internal/transport/http/routes"
+	"github.com/inview-team/gorynych/internal/application"
+	"github.com/inview-team/gorynych/internal/infrastructure/http/routes"
 )
 
 //	@title			Swagger Backend API
@@ -45,7 +45,7 @@ var (
 	}
 )
 
-func NewServer(app *application.App) *Server {
+func NewServer(app *application.Application) *Server {
 	return &Server{
 		srv: http.Server{
 			Handler:      routes.Make(app),

@@ -10,6 +10,6 @@ type Application struct {
 
 func New() *Application {
 	return &Application{
-		service.New(10000000000000000),
+		service.New(service.Config{MaxSize: 0}),
 	}
 }

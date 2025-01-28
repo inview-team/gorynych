@@ -13,14 +13,18 @@ type UploadService struct {
 	mu       sync.Mutex
 	storages map[string]entity.UploadRepository
 	uploads  map[entity.UploadID]*entity.Upload
-	maxSize  int64
+	config   Config
 }
 
-func New(maxSize int64) *UploadService {
+type Config struct {
+	MaxSize int64
+}
+
+func New(c Config) *UploadService {
 	return &UploadService{
 		storages: make(map[string]entity.UploadRepository),
 		uploads:  make(map[entity.UploadID]*entity.Upload),
-		maxSize:  maxSize,
+		config:   c,
 	}
 }
 
@@ -48,8 +52,8 @@ func (s *UploadService) CreateUpload(ctx context.Context, size int64, metadata m
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if size != 0 && s.maxSize > 0 && size > s.maxSize {
-		return "", ErrResourceTooBig
+	if size != 0 && s.config.MaxSize > 0 && size > s.config.MaxSize {
+		return "", ErrUploadBig
 	}
 
 	upload := entity.NewUpload(size, metadata)
@@ -78,20 +82,20 @@ func (s *UploadService) WritePart(ctx context.Context, id entity.UploadID, offse
 
 	upload, exists := s.uploads[id]
 	if !exists {
-		return 0, errors.New("upload not found")
+		return 0, ErrUploadNotFound
 	}
 
 	if offset != upload.Offset {
-		return 0, fmt.Errorf("incorrect offset provided. Expected: %d, Got: %d", upload.Offset, offset)
+		return 0, ErrWrongOffset
 	}
 
 	if offset+int64(len(data)) > upload.Size {
-		return 0, fmt.Errorf("chunk exceeds file size. File size: %d, chunk offset: %d, chunk size: %d", upload.Size, offset, len(data))
+		return 0, ErrUploadBig
 	}
 
 	storage, exists := s.storages[string(upload.StorageID)]
 	if !exists {
-		return 0, errors.New("storage not found")
+		return 0, ErrRepositoryNotFound
 	}
 
 	err := storage.WriteChunk(ctx, upload.ID, offset, data)
@@ -121,6 +125,15 @@ func (s *UploadService) GetUploads() []*entity.Upload {
 	return uploads
 }
 
+func (s *UploadService) GetUpload(ctx context.Context, uploadID entity.UploadID) (*entity.Upload, error) {
+	upload, exists := s.uploads[uploadID]
+	if !exists {
+		return nil, ErrUploadNotFound
+	}
+
+	return upload, nil
+}
+
 func (s *UploadService) GetStorages() []entity.UploadRepository {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -140,4 +153,8 @@ func (s *UploadService) chooseUploadStorage() (string, error) {
 		return id, nil
 	}
 	return "", ErrNoAvailableBuckets
+}
+
+func (s *UploadService) GetServiceConfiguration() Config {
+	return s.config
 }
