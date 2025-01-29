@@ -11,3 +11,7 @@ var (
 	ErrUploadBig      = errors.New("upload is too big")
 	ErrWrongOffset    = errors.New("wrong offset")
 )
+
+var (
+	ErrObjectNotFound = errors.New("object not found")
+)

@@ -16,5 +16,6 @@ func Make(app *application.Application) http.Handler {
 	r.MethodNotAllowedHandler = handlers.NotAllowedHandler()
 	r.NotFoundHandler = handlers.NotFoundHandler()
 	makeFileRoutes(r, app)
+	makeReplicationRoutes(r, app)
 	return r
 }

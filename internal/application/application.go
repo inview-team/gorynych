@@ -5,11 +5,14 @@ import (
 )
 
 type Application struct {
-	UploadService *service.UploadService
+	UploadService      *service.UploadService
+	ReplicationService *service.ReplicationService
 }
 
 func New() *Application {
 	return &Application{
 		service.New(service.Config{MaxSize: 0}),
+		service.NewReplicationService(),
 	}
+
 }

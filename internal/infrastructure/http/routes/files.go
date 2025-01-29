@@ -15,16 +15,6 @@ import (
 	"github.com/inview-team/gorynych/internal/infrastructure/http/views"
 )
 
-// uploadFile godoc
-//
-//	@Summary		Upload file
-//	@Description	upload file
-//	@Tags			Files
-//	@Accept			mpfd
-//	@Produce		json
-//	@Param			file	formData	file	true	"Body with file"
-//	@Success		200
-//	@Router			/files [post]
 func CreateUpload(s *service.UploadService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()

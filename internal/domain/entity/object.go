@@ -12,8 +12,8 @@ type Object struct {
 	ID       ObjectID
 	Name     string
 	Size     int64
+	Bucket   string
 	Metadata map[string]string
-	Buckets  []BucketID
 }
 
 type ObjectID string

@@ -57,13 +57,11 @@ func (s *UploadService) CreateUpload(ctx context.Context, size int64, metadata m
 	}
 
 	upload := entity.NewUpload(size, metadata)
-	fmt.Println(*upload)
 
 	id, err := s.chooseUploadStorage()
 	if err != nil {
 		return "", fmt.Errorf("failed to create upload: %v", err)
 	}
-	fmt.Println(id)
 
 	err = s.storages[id].Create(ctx, upload)
 	if err != nil {
@@ -72,7 +70,7 @@ func (s *UploadService) CreateUpload(ctx context.Context, size int64, metadata m
 
 	upload.SetStorage(entity.StorageID(id))
 	s.uploads[upload.ID] = upload
-	fmt.Println(*upload)
+	fmt.Printf("Create upload: %v\n", *upload)
 	return upload.ID, nil
 }
 
@@ -84,7 +82,7 @@ func (s *UploadService) WritePart(ctx context.Context, id entity.UploadID, offse
 	if !exists {
 		return 0, ErrUploadNotFound
 	}
-
+	fmt.Printf("Update upload: %v\n", *upload)
 	if offset != upload.Offset {
 		return 0, ErrWrongOffset
 	}
@@ -105,11 +103,11 @@ func (s *UploadService) WritePart(ctx context.Context, id entity.UploadID, offse
 
 	upload.SetOffset(offset + int64(len(data)))
 	if upload.Offset == upload.Size {
-		upload.Status = entity.Complete
 		err := storage.FinishUpload(ctx, upload.ID)
 		if err != nil {
 			return 0, fmt.Errorf("failed to finish upload: %v", err)
 		}
+		upload.Status = entity.Complete
 		return -1, nil
 	}
 	return upload.Offset, err

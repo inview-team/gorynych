@@ -65,6 +65,5 @@ func (u *Upload) SetStorage(storageID StorageID) {
 type UploadRepository interface {
 	Create(ctx context.Context, upload *Upload) error
 	WriteChunk(ctx context.Context, id UploadID, offset int64, data []byte) error
-	Get(ctx context.Context, id string)
 	FinishUpload(ctx context.Context, id UploadID) error
 }
