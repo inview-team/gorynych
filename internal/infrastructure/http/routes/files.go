@@ -9,26 +9,19 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/inview-team/gorynych/internal/application"
-	"github.com/inview-team/gorynych/internal/domain/entity"
 	"github.com/inview-team/gorynych/internal/domain/service"
 	"github.com/inview-team/gorynych/internal/infrastructure/http/controllers"
-	"github.com/inview-team/gorynych/internal/infrastructure/http/views"
+
+	log "github.com/sirupsen/logrus"
 )
 
 func CreateUpload(s *service.UploadService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
-		config := s.GetServiceConfiguration()
-
 		size, err := strconv.ParseInt(r.Header.Get("Upload-Length"), 10, 64)
 		if err != nil {
 			http.Error(w, "", http.StatusBadRequest)
-		}
-
-		if config.MaxSize > 0 && size > config.MaxSize {
-			http.Error(w, "", http.StatusRequestEntityTooLarge)
-			return
 		}
 
 		meta := controllers.NewMetadata(r.Header.Get("Upload-Metadata"))
@@ -38,6 +31,7 @@ func CreateUpload(s *service.UploadService) http.Handler {
 			http.Error(w, "", http.StatusInternalServerError)
 		}
 
+		fmt.Println(id)
 		w.Header().Set("Location", fmt.Sprintf("%s/%s", r.URL.String(), string(id)))
 		w.WriteHeader(http.StatusCreated)
 	})
@@ -46,8 +40,9 @@ func CreateUpload(s *service.UploadService) http.Handler {
 func WriteChunk(s *service.UploadService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		uploadID := mux.Vars(r)["upload_id"]
+		uploadID := mux.Vars(r)["object_id"]
 
+		log.Info(uploadID)
 		if r.Header.Get("Content-Type") != "application/offset+octet-stream" {
 			http.Error(w, "wrong content type", http.StatusBadRequest)
 		}
@@ -65,7 +60,7 @@ func WriteChunk(s *service.UploadService) http.Handler {
 			http.Error(w, "", http.StatusBadRequest)
 		}
 
-		newOffset, err := s.WritePart(ctx, entity.UploadID(uploadID), offset, bodyBuffer)
+		newOffset, err := s.WritePart(ctx, uploadID, offset, bodyBuffer)
 		if err != nil {
 			if errors.Is(err, service.ErrUploadNotFound) {
 				http.Error(w, "", http.StatusNotFound)
@@ -93,9 +88,9 @@ func WriteChunk(s *service.UploadService) http.Handler {
 func GetUploadInformation(s *service.UploadService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		uploadID := mux.Vars(r)["upload_id"]
+		uploadID := mux.Vars(r)["object_id"]
 
-		uploadInfo, err := s.GetUpload(ctx, entity.UploadID(uploadID))
+		uploadInfo, err := s.GetUpload(ctx, uploadID)
 		if err != nil {
 			if errors.Is(err, service.ErrUploadNotFound) {
 				http.Error(w, "", http.StatusNotFound)
@@ -103,10 +98,10 @@ func GetUploadInformation(s *service.UploadService) http.Handler {
 			}
 		}
 
-		metaHeader := views.NewResponseMetadata(uploadInfo.Metadata)
-		if metaHeader != "" {
-			w.Header().Add("Upload-Metadata", metaHeader)
-		}
+		//metaHeader := views.NewResponseMetadata(uploadInfo.Metadata)
+		//if metaHeader != "" {
+		//	w.Header().Add("Upload-Metadata", metaHeader)
+		//}
 		w.Header().Add("Upload-Offset", strconv.Itoa(int(uploadInfo.Offset)))
 		w.Header().Add("Upload-Length", strconv.Itoa(int(uploadInfo.Size)))
 		w.Header().Add("Cache-Control", "no-store")
@@ -120,10 +115,7 @@ func GetServerInformation(service *service.UploadService) http.Handler {
 		w.Header().Add("Tus-Version", "1.0.0")
 		w.Header().Add("Tus-Resumable", "1.0.0")
 		w.Header().Add("Tus-Extension", "creation")
-		config := service.GetServiceConfiguration()
-		if config.MaxSize > 0 {
-			w.Header().Set("Tus-Max-Size", strconv.Itoa(int(config.MaxSize)))
-		}
+		w.Header().Set("Tus-Max-Size", strconv.Itoa(int(500000000)))
 		w.WriteHeader(http.StatusNoContent)
 		return
 	})
@@ -133,7 +125,7 @@ func makeFileRoutes(r *mux.Router, app *application.Application) {
 	path := "/files"
 	serviceRouter := r.PathPrefix(path).Subrouter()
 	serviceRouter.Handle("", CreateUpload(app.UploadService)).Methods("POST")
-	serviceRouter.Handle(fmt.Sprintf("/%s", patternUploadID), GetUploadInformation(app.UploadService)).Methods("HEAD")
+	serviceRouter.Handle("/{object_id}", GetUploadInformation(app.UploadService)).Methods("HEAD")
 	serviceRouter.Handle("", GetServerInformation(app.UploadService)).Methods("OPTIONS")
-	serviceRouter.Handle(fmt.Sprintf("/%s", patternUploadID), WriteChunk(app.UploadService)).Methods("PATCH")
+	serviceRouter.Handle("/{object_id}", WriteChunk(app.UploadService)).Methods("PATCH")
 }

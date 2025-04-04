@@ -12,7 +12,6 @@ type Config struct {
 }
 
 type ObjectStorage struct {
-	Name            string `yaml:"name"`
 	Provider        string `yaml:"provider"`
 	AccessKeyID     string `yaml:"aws_access_key_id"`
 	SecretAccessKey string `yaml:"aws_secret_access_key "`
@@ -21,8 +20,7 @@ type ObjectStorage struct {
 type Provider string
 
 const (
-	Yandex   string = "yandex"
-	Selectel string = "selectel"
+	Yandex string = "yandex"
 )
 
 func Load(s string) (*Config, error) {

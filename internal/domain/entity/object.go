@@ -18,13 +18,13 @@ type Object struct {
 
 type ObjectID string
 
-func NewObjectID() ObjectID {
+func NewObjectID() string {
 	id := make([]byte, 16)
 	_, err := io.ReadFull(rand.Reader, id)
 	if err != nil {
 		fmt.Print("failed to generate id")
 	}
-	return ObjectID(hex.EncodeToString(id))
+	return hex.EncodeToString(id)
 }
 
 type Bucket struct {

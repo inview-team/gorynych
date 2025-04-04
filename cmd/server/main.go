@@ -2,19 +2,43 @@ package main
 
 import (
 	"context"
+	"os"
 
+	"github.com/inview-team/gorynych/config"
 	"github.com/inview-team/gorynych/internal/application"
 	server "github.com/inview-team/gorynych/internal/infrastructure/http"
 	"github.com/inview-team/gorynych/pkg/storage/s3/yandex"
+	log "github.com/sirupsen/logrus"
 )
 
 func main() {
-	ctx := context.Background()
+	configPath := os.Getenv("SERVICE_CONFIG_PATH")
+	if configPath == "" {
+		configPath = "./config.yaml"
+	}
 
-	yandexStorage, _ := yandex.New(ctx, "gorynych.1", creds)
+	cfg, err := config.LoadFile(configPath)
+	if err != nil {
+		log.Errorf(err.Error())
+		os.Exit(1)
+	}
+
+	ctx := context.TODO()
 	app := application.New()
-	app.UploadService.RegisterStorage(ctx, yandexStorage.GetID(), yandexStorage)
-	app.ReplicationService.RegisterStorage(ctx, yandexStorage.GetID(), yandexStorage)
+	for _, storage := range cfg.Storages {
+		switch storage.Provider {
+		case "yandex":
+			st, err := yandex.New(ctx, storage.AccessKeyID, storage.SecretAccessKey)
+			if err != nil {
+				log.Error("failed to init storage: %v", err.Error())
+			}
+			app.UploadService.RegisterStorage(ctx, st)
+		default:
+			log.Errorf("unknown provider: %s", storage.Provider)
+		}
+
+	}
+
 	srv := server.NewServer(app)
 	srv.Start(ctx)
 }

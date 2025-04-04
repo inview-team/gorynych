@@ -9,26 +9,33 @@ import (
 )
 
 type Upload struct {
-	ID        UploadID
-	Size      int64
-	Offset    int64
-	Status    UploadStatus
-	Metadata  map[string]string
-	StorageID StorageID
+	ID       string
+	ObjectID string
+	Size     int64
+	Offset   int64
+	Storage  Storage
+	Parts    []UploadPart
+	Status   UploadStatus
 }
 
-type UploadID string
+type UploadPart struct {
+	ID       string
+	Position int
+}
 
-func NewUploadID() UploadID {
+type Storage struct {
+	ProviderID string
+	Bucket     string
+}
+
+func NewStorageID() string {
 	id := make([]byte, 16)
 	_, err := io.ReadFull(rand.Reader, id)
 	if err != nil {
 		fmt.Print("failed to generate id")
 	}
-	return UploadID(hex.EncodeToString(id))
+	return hex.EncodeToString(id)
 }
-
-type StorageID string
 
 type UploadStatus int
 
@@ -39,31 +46,37 @@ const (
 	Failed
 )
 
-func NewUpload(size int64, metadata map[string]string) *Upload {
-	id := NewUploadID()
+func NewUpload(id string, objectID string, size int64, offset int64, status UploadStatus, parts []UploadPart, storage Storage) *Upload {
 	return &Upload{
 		ID:       id,
+		ObjectID: objectID,
 		Size:     size,
-		Metadata: metadata,
-		Offset:   0,
-		Status:   Active,
+		Offset:   offset,
+		Parts:    parts,
+		Storage:  storage,
+		Status:   status,
 	}
-}
-
-func (u *Upload) URL(baseURL string) string {
-	return fmt.Sprintf("%s/%s", baseURL, u.ID)
 }
 
 func (u *Upload) SetOffset(offset int64) {
 	u.Offset = offset
 }
 
-func (u *Upload) SetStorage(storageID StorageID) {
-	u.StorageID = storageID
+func (u *Upload) AddPartial(partialID string, position int) {
+	u.Parts = append(u.Parts, UploadPart{ID: partialID, Position: position})
 }
 
 type UploadRepository interface {
 	Create(ctx context.Context, upload *Upload) error
-	WriteChunk(ctx context.Context, id UploadID, offset int64, data []byte) error
-	FinishUpload(ctx context.Context, id UploadID) error
+	GetByID(ctx context.Context, uploadID string) (*Upload, error)
+	Update(ctx context.Context, upload *Upload) error
+}
+
+type StorageRepository interface {
+	Create(ctx context.Context, bucket string, id string, metadata map[string]string) (string, error)
+	WritePart(ctx context.Context, bucket string, uploadID string, objectID string, position int, data []byte) (string, error)
+	FinishUpload(ctx context.Context, upload *Upload) error
+	ListBuckets(ctx context.Context) ([]string, error)
+	IsBucketExist(ctx context.Context, bucket string) (bool, error)
+	GetProviderID(ctx context.Context) string
 }

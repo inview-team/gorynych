@@ -7,7 +7,6 @@ const (
 	objectID = "object_id"
 )
 
-const regexp = "[a-f\\d]{32}"
+const regexpUpload = "^[0-9A-F]{16}$"
 
-var patternUploadID = fmt.Sprintf("{%s:%s}", uploadID, regexp)
-var patternObjectID = fmt.Sprintf("{%s:%s}", objectID, regexp)
+var patternUploadID = fmt.Sprintf("{%s:%s}", uploadID, regexpUpload)

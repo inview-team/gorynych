@@ -7,34 +7,34 @@ import (
 	"sync"
 
 	"github.com/inview-team/gorynych/internal/domain/entity"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type UploadService struct {
-	mu       sync.Mutex
-	storages map[string]entity.UploadRepository
-	uploads  map[entity.UploadID]*entity.Upload
-	config   Config
+	mu         sync.Mutex
+	storages   map[string]entity.StorageRepository
+	uploads    map[string]*entity.Upload
+	uploadRepo entity.UploadRepository
 }
 
-type Config struct {
-	MaxSize int64
-}
-
-func New(c Config) *UploadService {
+func NewUploadService(uRepo entity.UploadRepository) *UploadService {
 	return &UploadService{
-		storages: make(map[string]entity.UploadRepository),
-		uploads:  make(map[entity.UploadID]*entity.Upload),
-		config:   c,
+		storages:   make(map[string]entity.StorageRepository),
+		uploads:    make(map[string]*entity.Upload),
+		uploadRepo: uRepo,
 	}
 }
 
-func (s *UploadService) RegisterStorage(ctx context.Context, id string, storage entity.UploadRepository) error {
+func (s *UploadService) RegisterStorage(ctx context.Context, storage entity.StorageRepository) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.storages[id]; ok {
-		return ErrRepositoryExists
+	storageId := entity.NewStorageID()
+	if _, ok := s.storages[storageId]; ok {
+		return ErrStorageExists
 	}
-	s.storages[id] = storage
+	log.Infof("registered storage with id %s from provider %s", storageId, storage.GetProviderID(ctx))
+	s.storages[storageId] = storage
 	return nil
 }
 
@@ -42,46 +42,64 @@ func (s *UploadService) DeregisterStorage(ctx context.Context, id string) error 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.storages[id]; !ok {
-		return ErrRepositoryNotFound
+		return ErrStorageNotFound
 	}
 	delete(s.storages, id)
 	return nil
 }
 
-func (s *UploadService) CreateUpload(ctx context.Context, size int64, metadata map[string]string) (entity.UploadID, error) {
+func (s *UploadService) CreateUpload(ctx context.Context, size int64, metadata map[string]string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if size != 0 && s.config.MaxSize > 0 && size > s.config.MaxSize {
-		return "", ErrUploadBig
+	storageID, bucket, err := s.chooseBucket(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to create upload: %w", err)
 	}
 
-	upload := entity.NewUpload(size, metadata)
-
-	id, err := s.chooseUploadStorage()
+	log.Infof("Choose storage with id: %s and bucket %s", storageID, bucket)
+	storage := s.storages[storageID]
+	objectID := entity.NewObjectID()
+	uploadID, err := storage.Create(ctx, bucket, objectID, metadata)
 	if err != nil {
 		return "", fmt.Errorf("failed to create upload: %v", err)
 	}
 
-	err = s.storages[id].Create(ctx, upload)
-	if err != nil {
-		return "", fmt.Errorf("failed to create upload: %v", err)
-	}
+	log.Infof("Create upload for object with ID %s", objectID)
+	upload := entity.NewUpload(uploadID, objectID, size, 0, entity.Active, nil, entity.Storage{ProviderID: storage.GetProviderID(ctx), Bucket: bucket})
+	s.uploads[objectID] = upload
 
-	upload.SetStorage(entity.StorageID(id))
-	s.uploads[upload.ID] = upload
-	fmt.Printf("Create upload: %v\n", *upload)
-	return upload.ID, nil
+	return objectID, nil
 }
 
-func (s *UploadService) WritePart(ctx context.Context, id entity.UploadID, offset int64, data []byte) (int64, error) {
+func (s *UploadService) chooseBucket(ctx context.Context) (string, string, error) {
+	if len(s.storages) == 0 {
+		return "", "", errors.New("no available storages")
+	}
+
+	for id, storage := range s.storages {
+		buckets, err := storage.ListBuckets(ctx)
+		if err != nil {
+			log.Errorf("failed to get bucket: %v", err)
+			continue
+		}
+		log.Infof("found %d buckets: %v", len(buckets), buckets)
+
+		return id, buckets[0], nil
+	}
+	return "", "", ErrNoAvailableBuckets
+}
+
+func (s *UploadService) WritePart(ctx context.Context, objectID string, offset int64, data []byte) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	upload, exists := s.uploads[id]
+	log.Infof("Search for upload with Object ID %s", objectID)
+	upload, exists := s.uploads[objectID]
 	if !exists {
 		return 0, ErrUploadNotFound
 	}
+
 	fmt.Printf("Update upload: %v\n", *upload)
 	if offset != upload.Offset {
 		return 0, ErrWrongOffset
@@ -91,26 +109,63 @@ func (s *UploadService) WritePart(ctx context.Context, id entity.UploadID, offse
 		return 0, ErrUploadBig
 	}
 
-	storage, exists := s.storages[string(upload.StorageID)]
-	if !exists {
-		return 0, ErrRepositoryNotFound
+	log.Infof("Search for storage with Bucket %s", upload.Storage.Bucket)
+	storageID, err := s.getStorageByBucket(ctx, upload.Storage)
+	if err != nil {
+		return 0, ErrBucketNotFound
+	}
+	log.Infof("Found storage with id %s", storageID)
+	storage := s.storages[storageID]
+
+	var position int
+	if upload.Parts != nil {
+		position = len(upload.Parts) + 1
+	} else {
+		position = 1
 	}
 
-	err := storage.WriteChunk(ctx, upload.ID, offset, data)
+	partID, err := storage.WritePart(ctx, upload.Storage.Bucket, upload.ID, upload.ObjectID, position, data)
 	if err != nil {
-		return 0, fmt.Errorf("failed to upload chunk: %v", err)
+		log.Errorf("failed to write part. Reason: %v", err)
+		return 0, fmt.Errorf("failed to upload chunk: %w", err)
 	}
 
 	upload.SetOffset(offset + int64(len(data)))
+	upload.AddPartial(partID, position)
+
 	if upload.Offset == upload.Size {
-		err := storage.FinishUpload(ctx, upload.ID)
+		err := storage.FinishUpload(ctx, upload)
 		if err != nil {
 			return 0, fmt.Errorf("failed to finish upload: %v", err)
 		}
 		upload.Status = entity.Complete
 		return -1, nil
 	}
-	return upload.Offset, err
+	return upload.Offset, nil
+}
+
+func (s *UploadService) getStorageByBucket(ctx context.Context, st entity.Storage) (string, error) {
+	if len(s.storages) == 0 {
+		return "", errors.New("no available storages")
+	}
+
+	for id, storage := range s.storages {
+		if st.ProviderID != storage.GetProviderID(ctx) {
+			continue
+		}
+
+		exists, err := storage.IsBucketExist(ctx, st.Bucket)
+		if err != nil {
+			// fmt.Errorf("failed to retrieve buckets: %v")
+			continue
+		}
+
+		if !exists {
+			continue
+		}
+		return id, nil
+	}
+	return "", ErrNoAvailableBuckets
 }
 
 func (s *UploadService) GetUploads() []*entity.Upload {
@@ -123,36 +178,10 @@ func (s *UploadService) GetUploads() []*entity.Upload {
 	return uploads
 }
 
-func (s *UploadService) GetUpload(ctx context.Context, uploadID entity.UploadID) (*entity.Upload, error) {
-	upload, exists := s.uploads[uploadID]
+func (s *UploadService) GetUpload(ctx context.Context, id string) (*entity.Upload, error) {
+	upload, exists := s.uploads[id]
 	if !exists {
 		return nil, ErrUploadNotFound
 	}
-
 	return upload, nil
-}
-
-func (s *UploadService) GetStorages() []entity.UploadRepository {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var storages []entity.UploadRepository
-	for _, storage := range s.storages {
-		storages = append(storages, storage)
-	}
-	return storages
-}
-
-func (s *UploadService) chooseUploadStorage() (string, error) {
-	if len(s.storages) == 0 {
-		return "", errors.New("no available repositories")
-	}
-
-	for id := range s.storages {
-		return id, nil
-	}
-	return "", ErrNoAvailableBuckets
-}
-
-func (s *UploadService) GetServiceConfiguration() Config {
-	return s.config
 }

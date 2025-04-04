@@ -3,48 +3,33 @@ package yandex
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/inview-team/gorynych/internal/domain/entity"
 	"github.com/inview-team/gorynych/internal/domain/service"
-	"github.com/inview-team/gorynych/pkg/storage/s3/yandex/model"
 )
 
-const Provider string = "yandex"
+const ProviderID string = "yandex"
 
 type YandexStorage struct {
 	mu       sync.Mutex
-	id       string
 	s3Client *s3.Client
-	uploads  map[entity.UploadID]*model.MultipartUpload
 }
 
-func (s *YandexStorage) GetID() string {
-	return s.id
-}
-
-// Get implements entity.UploadRepository.
-func (s *YandexStorage) Get(ctx context.Context, id string) {
-	panic("unimplemented")
-}
-
-// WriteChunk implements entity.UploadRepository.
-
-type S3Credentials struct {
-	AccessKeyID     string `yaml:"access_key_id"`
-	SecretAccessKey string `yaml:"secret_access_key"`
-}
-
-func New(ctx context.Context, id string, creds S3Credentials) (*YandexStorage, error) {
+func New(ctx context.Context, id, secret string) (*YandexStorage, error) {
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithCredentialsProvider(
-		credentials.NewStaticCredentialsProvider(creds.AccessKeyID, creds.SecretAccessKey, "")),
+		credentials.NewStaticCredentialsProvider(id, secret, "")),
 	)
+
 	if err != nil {
 		fmt.Println("Couldn't load default configuration. Have you set up your AWS account?")
 		fmt.Println(err)
@@ -56,87 +41,67 @@ func New(ctx context.Context, id string, creds S3Credentials) (*YandexStorage, e
 	})
 
 	return &YandexStorage{
-		id:       id,
 		s3Client: client,
-		uploads:  make(map[entity.UploadID]*model.MultipartUpload),
 	}, nil
 }
 
-func (s *YandexStorage) Create(ctx context.Context, upload *entity.Upload) error {
+func (s *YandexStorage) GetProviderID(ctx context.Context) string {
+	return ProviderID
+}
+
+func (s *YandexStorage) Create(ctx context.Context, storageID string, id string, metadata map[string]string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	buckets, err := s.ListBuckets(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to create upload: %v", err)
-	}
-
-	index := 0
-
 	input := &s3.CreateMultipartUploadInput{
-		Bucket:   aws.String(string(buckets[index].Name)),
-		Key:      aws.String(string(upload.ID)),
-		Metadata: upload.Metadata,
+		Bucket:   aws.String(storageID),
+		Key:      aws.String(id),
+		Metadata: metadata,
 	}
 
 	resp, err := s.s3Client.CreateMultipartUpload(ctx, input)
 	if err != nil {
-		return fmt.Errorf("failed to create upload: %v", err)
+		return "", fmt.Errorf("failed to create upload: %v", err)
 	}
 
-	mpUpload := model.NewMultiPartUpload(*resp.UploadId, buckets[index].Name)
-	s.uploads[upload.ID] = mpUpload
-	fmt.Println(mpUpload)
-	return nil
+	return *resp.UploadId, nil
 }
 
-func (s *YandexStorage) WriteChunk(ctx context.Context, id entity.UploadID, offset int64, data []byte) error {
+func (s *YandexStorage) WritePart(ctx context.Context, bucket string, uploadID string, objectID string, position int, data []byte) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	upload, exists := s.uploads[id]
-	if !exists {
-		return fmt.Errorf("failed to upload chunk: upload not found")
-	}
-
 	input := &s3.UploadPartInput{
-		Bucket:     aws.String(upload.Bucket),
-		Key:        aws.String(string(id)),
-		UploadId:   aws.String(upload.ID),
-		PartNumber: aws.Int32(int32(len(upload.Partials)) + 1),
+		Bucket:     aws.String(bucket),
+		Key:        aws.String(objectID),
+		UploadId:   aws.String(uploadID),
+		PartNumber: aws.Int32(int32(position)),
 		Body:       bytes.NewReader(data),
 	}
 
 	resp, err := s.s3Client.UploadPart(ctx, input)
 	if err != nil {
-		return fmt.Errorf("failed to upload chunk: %v", err)
+		return "", fmt.Errorf("failed to upload chunk: %v", err)
 	}
-
-	s.uploads[id].AddPartial(*resp.ETag)
-	return nil
+	return *resp.ETag, nil
 }
 
-func (s *YandexStorage) FinishUpload(ctx context.Context, id entity.UploadID) error {
+func (s *YandexStorage) FinishUpload(ctx context.Context, upload *entity.Upload) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	upload, exists := s.uploads[id]
-	if !exists {
-		return fmt.Errorf("failed to upload chunk: upload not found")
-	}
-
-	parts := make([]types.CompletedPart, len(upload.Partials))
-	for i, tag := range upload.Partials {
-		partNumber := i + 1
+	parts := make([]types.CompletedPart, len(upload.Parts))
+	for i, part := range upload.Parts {
+		partNumber := part.Position
 		parts[i] = types.CompletedPart{
 			PartNumber: aws.Int32(int32(partNumber)),
-			ETag:       aws.String(tag),
+			ETag:       aws.String(part.ID),
 		}
 	}
 
 	input := &s3.CompleteMultipartUploadInput{
-		Bucket:          aws.String(upload.Bucket),
-		Key:             aws.String(string(id)),
+		Bucket:          aws.String(upload.Storage.Bucket),
+		Key:             aws.String(upload.ObjectID),
 		UploadId:        aws.String(upload.ID),
 		MultipartUpload: &types.CompletedMultipartUpload{Parts: parts},
 	}
@@ -149,23 +114,36 @@ func (s *YandexStorage) FinishUpload(ctx context.Context, id entity.UploadID) er
 	return nil
 }
 
-func (s *YandexStorage) ListBuckets(ctx context.Context) ([]*entity.Bucket, error) {
+func (s *YandexStorage) ListBuckets(ctx context.Context) ([]string, error) {
 	result, err := s.s3Client.ListBuckets(ctx, &s3.ListBucketsInput{})
 	if err != nil {
 		fmt.Print("failed to list buckets")
 		return nil, err
 	}
 
-	buckets := make([]*entity.Bucket, len(result.Buckets))
-	for index, bucket := range result.Buckets {
-		buckets[index] = &entity.Bucket{
-			ID:        entity.NewBucketID(s.id, *bucket.Name),
-			Name:      *bucket.Name,
-			StorageID: s.id,
-		}
+	var buckets []string
+	for _, bucket := range result.Buckets {
+		buckets = append(buckets, *bucket.Name)
 	}
 
 	return buckets, nil
+}
+
+func (s *YandexStorage) IsBucketExist(ctx context.Context, bucket string) (bool, error) {
+	input := &s3.HeadBucketInput{
+		Bucket: aws.String(bucket),
+	}
+
+	_, err := s.s3Client.HeadBucket(ctx, input)
+	if err != nil {
+		var responseError *awshttp.ResponseError
+		if errors.As(err, &responseError) && responseError.ResponseError.HTTPStatusCode() == http.StatusNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
 }
 
 // GetObject implements entity.ReplicationRepository.
