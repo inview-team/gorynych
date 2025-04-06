@@ -15,6 +15,10 @@ func Make(app *application.Application) http.Handler {
 
 	r.MethodNotAllowedHandler = handlers.NotAllowedHandler()
 	r.NotFoundHandler = handlers.NotFoundHandler()
+
+	path := "/api"
+	apiRouter := r.PathPrefix(path).Subrouter()
 	makeFileRoutes(r, app)
+	makeAccountRoutes(apiRouter, app)
 	return middleware.NewLogger(r)
 }

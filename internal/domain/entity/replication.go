@@ -1,7 +1,6 @@
 package entity
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -25,7 +24,4 @@ func NewReplicationID() ReplicationID {
 }
 
 type ReplicationRepository interface {
-	GetObject(ctx context.Context, id ObjectID, bucketName string) (*Object, error)
-	CopyObject(ctx context.Context, sourceObject ObjectID, targetObject ObjectID, sourceBucket string, targetBucket string) error
-	ListBuckets(ctx context.Context) ([]*Bucket, error)
 }

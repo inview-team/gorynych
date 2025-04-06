@@ -1,8 +1,8 @@
 package entity
 
 import (
+	"context"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -27,14 +27,11 @@ func NewObjectID() string {
 	return hex.EncodeToString(id)
 }
 
-type Bucket struct {
-	ID        BucketID
-	Name      string
-	StorageID string
-}
-
-type BucketID string
-
-func NewBucketID(storageID string, bucketName string) BucketID {
-	return BucketID(fmt.Sprintf("%s.%s", base64.StdEncoding.EncodeToString([]byte(storageID)), base64.StdEncoding.EncodeToString([]byte(bucketName))))
+type ObjectRepository interface {
+	Create(ctx context.Context, bucket string, id string, metadata map[string]string) (string, error)
+	WritePart(ctx context.Context, bucket string, uploadID string, objectID string, position int, data []byte) (string, error)
+	FinishUpload(ctx context.Context, upload *Upload) error
+	ListBuckets(ctx context.Context) ([]string, error)
+	IsBucketExist(ctx context.Context, bucket string) (bool, error)
+	GetProviderID(ctx context.Context) string
 }

@@ -6,11 +6,15 @@ import (
 )
 
 type Application struct {
-	UploadService *service.UploadService
+	UploadService  *service.UploadService
+	AccountService *service.AccountService
 }
 
 func New(client *mongo.Client) *Application {
+	aRepo := mongo.NewAccountRepository(client)
+	uRepo := mongo.NewUploadRepository(client)
 	return &Application{
-		service.NewUploadService(mongo.NewUploadRepository(client)),
+		service.NewUploadService(uRepo, aRepo),
+		service.NewAccountService(aRepo),
 	}
 }

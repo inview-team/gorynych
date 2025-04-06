@@ -71,12 +71,3 @@ type UploadRepository interface {
 	GetByID(ctx context.Context, uploadID string) (*Upload, error)
 	Update(ctx context.Context, upload *Upload) error
 }
-
-type StorageRepository interface {
-	Create(ctx context.Context, bucket string, id string, metadata map[string]string) (string, error)
-	WritePart(ctx context.Context, bucket string, uploadID string, objectID string, position int, data []byte) (string, error)
-	FinishUpload(ctx context.Context, upload *Upload) error
-	ListBuckets(ctx context.Context) ([]string, error)
-	IsBucketExist(ctx context.Context, bucket string) (bool, error)
-	GetProviderID(ctx context.Context) string
-}

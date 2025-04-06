@@ -9,23 +9,14 @@ import (
 )
 
 type Config struct {
-	Providers []ObjectStorage `yaml:"providers,omitempty"`
-	Storage   mongo.Config    `yaml:"storage,omitempty"`
+	Database mongo.Config `yaml:"database,omitempty"`
 }
 
 var (
 	DefaultConfig Config = Config{
-		Storage: mongo.DefaultConfig,
+		Database: mongo.DefaultConfig,
 	}
 )
-
-type ObjectStorage struct {
-	Type         string `yaml:"type"`
-	AccessKeyID  string `yaml:"access_key_id"`
-	AccessSecret string `yaml:"access_secret"`
-}
-
-type Provider string
 
 func Load(s string) (*Config, error) {
 	cfg := DefaultConfig

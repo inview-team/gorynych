@@ -15,3 +15,9 @@ var (
 var (
 	ErrObjectNotFound = errors.New("object not found")
 )
+
+// Service accounts errors
+var (
+	ErrNoAvailableAccounts = errors.New("no available accounts")
+	ErrAccountNotFound     = errors.New("account not found")
+)
