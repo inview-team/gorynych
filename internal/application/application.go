@@ -2,14 +2,15 @@ package application
 
 import (
 	"github.com/inview-team/gorynych/internal/domain/service"
+	"github.com/inview-team/gorynych/internal/infrastructure/mongo"
 )
 
 type Application struct {
 	UploadService *service.UploadService
 }
 
-func New() *Application {
+func New(client *mongo.Client) *Application {
 	return &Application{
-		service.NewUploadService(nil),
+		service.NewUploadService(mongo.NewUploadRepository(client)),
 	}
 }

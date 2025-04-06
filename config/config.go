@@ -4,34 +4,38 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/inview-team/gorynych/internal/infrastructure/mongo"
 	"gopkg.in/yaml.v2"
 )
 
 type Config struct {
-	Storages []ObjectStorage `yaml:"storages"`
+	Providers []ObjectStorage `yaml:"providers,omitempty"`
+	Storage   mongo.Config    `yaml:"storage,omitempty"`
 }
 
+var (
+	DefaultConfig Config = Config{
+		Storage: mongo.DefaultConfig,
+	}
+)
+
 type ObjectStorage struct {
-	Provider        string `yaml:"provider"`
-	AccessKeyID     string `yaml:"aws_access_key_id"`
-	SecretAccessKey string `yaml:"aws_secret_access_key "`
+	Type         string `yaml:"type"`
+	AccessKeyID  string `yaml:"access_key_id"`
+	AccessSecret string `yaml:"access_secret"`
 }
 
 type Provider string
 
-const (
-	Yandex string = "yandex"
-)
-
 func Load(s string) (*Config, error) {
-	cfg := &Config{}
+	cfg := DefaultConfig
 
-	err := yaml.Unmarshal([]byte(s), cfg)
+	err := yaml.Unmarshal([]byte(s), &cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	return cfg, nil
+	return &cfg, nil
 }
 
 func LoadFile(filename string) (*Config, error) {

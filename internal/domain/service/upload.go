@@ -68,6 +68,10 @@ func (s *UploadService) CreateUpload(ctx context.Context, size int64, metadata m
 	log.Infof("Create upload for object with ID %s", objectID)
 	upload := entity.NewUpload(uploadID, objectID, size, 0, entity.Active, nil, entity.Storage{ProviderID: storage.GetProviderID(ctx), Bucket: bucket})
 	s.uploads[objectID] = upload
+	err = s.uploadRepo.Add(ctx, upload)
+	if err != nil {
+		log.Errorf("failed to save upload: %v", err.Error())
+	}
 
 	return objectID, nil
 }
@@ -95,12 +99,21 @@ func (s *UploadService) WritePart(ctx context.Context, objectID string, offset i
 	defer s.mu.Unlock()
 
 	log.Infof("Search for upload with Object ID %s", objectID)
+	var upload *entity.Upload
 	upload, exists := s.uploads[objectID]
 	if !exists {
-		return 0, ErrUploadNotFound
+		upload, err := s.uploadRepo.GetByID(ctx, objectID)
+		if err != nil {
+			log.Errorf("failed to write part: failed to find upload: %v", err.Error())
+			return 0, err
+		}
+
+		if upload == nil {
+			return 0, ErrUploadNotFound
+		}
 	}
 
-	fmt.Printf("Update upload: %v\n", *upload)
+	log.Infof("Update upload: %v\n", *upload)
 	if offset != upload.Offset {
 		return 0, ErrWrongOffset
 	}
@@ -139,8 +152,13 @@ func (s *UploadService) WritePart(ctx context.Context, objectID string, offset i
 			return 0, fmt.Errorf("failed to finish upload: %v", err)
 		}
 		upload.Status = entity.Complete
-		return -1, nil
 	}
+
+	err = s.uploadRepo.Update(ctx, upload)
+	if err != nil {
+		log.Errorf("failed to update upload: %v", err)
+	}
+
 	return upload.Offset, nil
 }
 

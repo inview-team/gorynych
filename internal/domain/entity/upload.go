@@ -67,7 +67,7 @@ func (u *Upload) AddPartial(partialID string, position int) {
 }
 
 type UploadRepository interface {
-	Create(ctx context.Context, upload *Upload) error
+	Add(ctx context.Context, upload *Upload) error
 	GetByID(ctx context.Context, uploadID string) (*Upload, error)
 	Update(ctx context.Context, upload *Upload) error
 }
