@@ -8,11 +8,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+
+	"github.com/schollz/progressbar/v3"
 )
 
 const (
 	uploadURL     = "http://localhost:30000" // URL сервера Tus
-	chunkSize     = 200 * 1024 * 1024        // Размер блока (1MB)
+	chunkSize     = 5 * 1024 * 1024          // Размер блока (1MB)
 	tusVersion    = "1.0.0"                  // Версия протокола Tus
 	maxRetryCount = 3                        // Максимальное количество попыток
 )
@@ -97,7 +99,7 @@ func uploadFileChunks(uploadID string, file *os.File) error {
 	offset := int64(0)
 	fileInfo, _ := file.Stat()
 	fileSize := fileInfo.Size()
-
+	bar := progressbar.Default(fileSize)
 	for {
 		// Читаем следующий блок данных
 		buffer := make([]byte, chunkSize)
@@ -133,6 +135,8 @@ func uploadFileChunks(uploadID string, file *os.File) error {
 				break
 			}
 
+			//fmt.Print(resp.StatusCode)
+
 			if resp != nil {
 				resp.Body.Close()
 			}
@@ -144,7 +148,8 @@ func uploadFileChunks(uploadID string, file *os.File) error {
 
 		// Обновляем смещение
 		offset += int64(n)
-		fmt.Printf("Блок загружен: %d/%d байт\n", offset, fileSize)
+		bar.Add(n)
+		// fmt.Printf("Блок загружен: %d/%d байт\n", offset, fileSize)
 
 		// Проверяем статус ответа
 		if resp.StatusCode != http.StatusNoContent {

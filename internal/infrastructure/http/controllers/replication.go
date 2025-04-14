@@ -1,11 +1,11 @@
 package controllers
 
-import "github.com/inview-team/gorynych/internal/domain/entity"
-
-type File struct {
-	ID string `json:"id"`
+type ReplicateInput struct {
+	SourceStorage Storage `json:"source_storage"`
+	TargetStorage Storage `json:"target_storage"`
 }
 
-func (r *File) ToEntity() entity.ObjectID {
-	return entity.ObjectID(r.ID)
+type Storage struct {
+	ProviderID string `json:"provider_id"`
+	Bucket     string `json:"bucket"`
 }

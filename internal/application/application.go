@@ -6,8 +6,9 @@ import (
 )
 
 type Application struct {
-	UploadService  *service.UploadService
-	AccountService *service.AccountService
+	UploadService      *service.UploadService
+	AccountService     *service.AccountService
+	ReplicationService *service.ReplicationService
 }
 
 func New(client *mongo.Client) *Application {
@@ -16,5 +17,6 @@ func New(client *mongo.Client) *Application {
 	return &Application{
 		service.NewUploadService(uRepo, aRepo),
 		service.NewAccountService(aRepo),
+		service.NewReplicationService(nil, aRepo),
 	}
 }

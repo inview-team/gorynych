@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -14,6 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/inview-team/gorynych/internal/domain/entity"
+
+	log "github.com/sirupsen/logrus"
 )
 
 const ProviderID string = "yandex"
@@ -132,4 +135,51 @@ func (s *ClientYandex) IsBucketExist(ctx context.Context, bucket string) (bool, 
 	}
 
 	return true, nil
+}
+
+// DownloadObject implements entity.ObjectRepository.
+func (s *ClientYandex) DownloadObject(ctx context.Context, bucket string, objectID string, startOffset int64, endOffset int64) ([]byte, error) {
+	input := &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(objectID),
+		Range:  aws.String(fmt.Sprintf("bytes=%d-%d", startOffset, endOffset)),
+	}
+
+	output, err := s.s3Client.GetObject(ctx, input)
+	if err != nil {
+		var responseError *awshttp.ResponseError
+		if errors.As(err, &responseError) && responseError.ResponseError.HTTPStatusCode() == http.StatusNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	data, _ := io.ReadAll(output.Body)
+	defer output.Body.Close()
+	return data, nil
+}
+
+// GetObject implements entity.ObjectRepository.
+func (s *ClientYandex) GetObject(ctx context.Context, bucket string, objectID string) (*entity.Object, error) {
+	input := &s3.HeadObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(objectID),
+	}
+
+	output, err := s.s3Client.HeadObject(ctx, input)
+	if err != nil {
+		var responseError *awshttp.ResponseError
+		if errors.As(err, &responseError) && responseError.ResponseError.HTTPStatusCode() == http.StatusNotFound {
+			log.Errorf(err.Error())
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &entity.Object{
+		ID:       entity.ObjectID(objectID),
+		Name:     objectID,
+		Size:     *output.ContentLength,
+		Metadata: output.Metadata,
+	}, nil
 }

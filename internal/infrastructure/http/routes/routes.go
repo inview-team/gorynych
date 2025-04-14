@@ -20,5 +20,6 @@ func Make(app *application.Application) http.Handler {
 	apiRouter := r.PathPrefix(path).Subrouter()
 	makeFileRoutes(r, app)
 	makeAccountRoutes(apiRouter, app)
+	makeTaskRoutes(apiRouter, app)
 	return middleware.NewLogger(r)
 }

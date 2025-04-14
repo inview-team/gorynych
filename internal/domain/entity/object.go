@@ -12,7 +12,6 @@ type Object struct {
 	ID       ObjectID
 	Name     string
 	Size     int64
-	Bucket   string
 	Metadata map[string]string
 }
 
@@ -34,4 +33,6 @@ type ObjectRepository interface {
 	ListBuckets(ctx context.Context) ([]string, error)
 	IsBucketExist(ctx context.Context, bucket string) (bool, error)
 	GetProviderID(ctx context.Context) string
+	GetObject(ctx context.Context, bucket string, objectID string) (*Object, error)
+	DownloadObject(ctx context.Context, bucket string, objectID string, startOffset int64, endOffset int64) ([]byte, error)
 }

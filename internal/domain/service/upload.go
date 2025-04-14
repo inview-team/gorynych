@@ -27,6 +27,7 @@ func NewUploadService(uRepo entity.UploadRepository, aRepo entity.AccountReposit
 }
 
 func (s *UploadService) CreateUpload(ctx context.Context, size int64, metadata map[string]string) (string, error) {
+	log.Infof("create new upload")
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -56,6 +57,7 @@ func (s *UploadService) CreateUpload(ctx context.Context, size int64, metadata m
 }
 
 func (s *UploadService) chooseAccount(ctx context.Context) (entity.ObjectRepository, string, error) {
+	log.Info("choose account for upload")
 	accounts, err := s.accountRepo.ListByProvider(ctx, entity.Yandex)
 	if err != nil {
 		log.Errorf("failed to choose account: failed to list accounts: %v", err.Error())
@@ -86,6 +88,7 @@ func (s *UploadService) chooseAccount(ctx context.Context) (entity.ObjectReposit
 }
 
 func (s *UploadService) WritePart(ctx context.Context, objectID string, offset int64, data []byte) (int64, error) {
+	log.Infof("write part to object with id %s", objectID)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -153,6 +156,7 @@ func (s *UploadService) WritePart(ctx context.Context, objectID string, offset i
 }
 
 func (s *UploadService) getAccountByBucket(ctx context.Context, st entity.Storage) (entity.ObjectRepository, error) {
+	log.Info("search bucket")
 	accounts, err := s.accountRepo.ListByProvider(ctx, entity.Provider(st.ProviderID))
 	if err != nil {
 		log.Errorf("failed to choose account: failed to list accounts: %v", err.Error())

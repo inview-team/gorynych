@@ -11,8 +11,6 @@ import (
 	"github.com/inview-team/gorynych/internal/application"
 	"github.com/inview-team/gorynych/internal/domain/service"
 	"github.com/inview-team/gorynych/internal/infrastructure/http/controllers"
-
-	log "github.com/sirupsen/logrus"
 )
 
 func CreateUpload(s *service.UploadService) http.Handler {
@@ -40,9 +38,8 @@ func CreateUpload(s *service.UploadService) http.Handler {
 func WriteChunk(s *service.UploadService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		uploadID := mux.Vars(r)["object_id"]
+		objectID := mux.Vars(r)["object_id"]
 
-		log.Info(uploadID)
 		if r.Header.Get("Content-Type") != "application/offset+octet-stream" {
 			http.Error(w, "wrong content type", http.StatusBadRequest)
 		}
@@ -60,7 +57,7 @@ func WriteChunk(s *service.UploadService) http.Handler {
 			http.Error(w, "", http.StatusBadRequest)
 		}
 
-		newOffset, err := s.WritePart(ctx, uploadID, offset, bodyBuffer)
+		newOffset, err := s.WritePart(ctx, objectID, offset, bodyBuffer)
 		if err != nil {
 			if errors.Is(err, service.ErrUploadNotFound) {
 				http.Error(w, "", http.StatusNotFound)
