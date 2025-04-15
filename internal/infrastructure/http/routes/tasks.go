@@ -12,10 +12,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func ReplicateFile(s *service.ReplicationService) http.Handler {
+func ReplicateFile(s *service.WorkerService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		errorMessage := "Error replicate object"
-		ctx := r.Context()
+
 		objectID := mux.Vars(r)["object_id"]
 
 		cTask := new(controllers.ReplicateInput)
@@ -25,28 +25,23 @@ func ReplicateFile(s *service.ReplicationService) http.Handler {
 			return
 		}
 
-		err := s.Replicate(ctx, objectID, 0, entity.Storage(cTask.SourceStorage), entity.Storage(cTask.TargetStorage))
-		if err != nil {
-			switch err {
-			case service.ErrObjectNotFound:
-				http.Error(w, err.Error(), http.StatusNotFound)
-				return
-			case service.ErrBucketNotFound:
-				http.Error(w, err.Error(), http.StatusNotFound)
-				return
-			default:
-				log.Errorf(err.Error())
-				http.Error(w, errorMessage, http.StatusInternalServerError)
-				return
-			}
-		}
-
+		task := entity.NewReplicationTask(objectID, entity.Storage(cTask.SourceStorage), entity.Storage(cTask.TargetStorage))
+		s.Submit(*task)
 		w.WriteHeader(http.StatusAccepted)
 	})
 }
 
+func GetResults(s *service.WorkerService) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		result := s.GetResult()
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode()
+	})
+}
+
 func makeTaskRoutes(r *mux.Router, app *application.Application) {
-	path := "/replicate"
+	path := "/tasks"
 	serviceRouter := r.PathPrefix(path).Subrouter()
-	serviceRouter.Handle("/{object_id}", ReplicateFile(app.ReplicationService)).Methods("POST")
+	serviceRouter.Handle("/replicate/{object_id}", ReplicateFile(app.WorkerService)).Methods("POST")
+	serviceRouter.Handle("/replicate", GetResults(app.WorkerService)).Methods("GET")
 }

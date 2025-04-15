@@ -1,7 +1,6 @@
 package entity
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -9,37 +8,16 @@ import (
 )
 
 type ReplicationTask struct {
-	ID                  string
-	ObjectID            string
-	Priority            Priority
-	UploadInformation   *Upload
-	DownloadInformation *Download
+	ObjectID      string
+	SourceStorage Storage
+	TargetStorage Storage
 }
 
-type Priority int
-
-const (
-	ManualReplicate Priority = iota
-	LostObject
-)
-
-func NewReplicationTask(id string, objectID string, priority Priority, downloadInfo *Download, uploadInfo *Upload) *ReplicationTask {
+func NewReplicationTask(objectID string, sStorage Storage, tStorage Storage) *ReplicationTask {
 	return &ReplicationTask{
-		ID:                  id,
-		ObjectID:            objectID,
-		Priority:            priority,
-		DownloadInformation: downloadInfo,
-		UploadInformation:   uploadInfo,
-	}
-}
-
-type Download struct {
-	Storage Storage
-}
-
-func NewDownload(storage Storage) *Download {
-	return &Download{
-		Storage: storage,
+		ObjectID:      objectID,
+		SourceStorage: sStorage,
+		TargetStorage: tStorage,
 	}
 }
 
@@ -50,11 +28,4 @@ func NewReplicationID() string {
 		fmt.Print("failed to generate id")
 	}
 	return hex.EncodeToString(id)
-}
-
-type ReplicationRepository interface {
-	Add(ctx context.Context, task *ReplicationTask) error
-	GetByID(ctx context.Context, taskID string) (*ReplicationTask, error)
-	Update(ctx context.Context, task *ReplicationTask) error
-	ListByPriority(ctx context.Context, priority Priority) ([]string, error)
 }

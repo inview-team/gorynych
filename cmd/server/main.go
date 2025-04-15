@@ -33,7 +33,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	app := application.New(client)
+	app := application.New(ctx, client)
 
 	srv := server.NewServer(app)
 	srv.Start(ctx)

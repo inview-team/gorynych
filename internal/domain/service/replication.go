@@ -9,15 +9,25 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type ReplicationService struct {
-	rRepo entity.ReplicationRepository
-	aRepo entity.AccountRepository
+type ReplicationWorker struct {
+	id         int
+	aRepo      entity.AccountRepository
+	taskQueue  <-chan entity.ReplicationTask
+	resultChan chan<- Result
 }
 
-func NewReplicationService(rRepo entity.ReplicationRepository, aRepo entity.AccountRepository) *ReplicationService {
-	return &ReplicationService{
-		rRepo: rRepo,
-		aRepo: aRepo,
+type Result struct {
+	ObjectID string
+	Storage  entity.Storage
+	Error    error
+}
+
+func NewReplicationService(id int, taskQueue <-chan entity.ReplicationTask, resultChan chan<- Result, aRepo entity.AccountRepository) *ReplicationWorker {
+	return &ReplicationWorker{
+		id:         id,
+		taskQueue:  taskQueue,
+		resultChan: resultChan,
+		aRepo:      aRepo,
 	}
 }
 
@@ -25,15 +35,29 @@ const (
 	chunkSize int = 100 * 1024 * 1024
 )
 
-func (s *ReplicationService) Replicate(ctx context.Context, objectId string, priority entity.Priority, sourceStorage entity.Storage, targetStorage entity.Storage) error {
-	log.Infof("Get task to replicate from source %s to target %s", sourceStorage.Bucket, targetStorage.Bucket)
-	sourceRepo, err := s.getAccountByBucket(ctx, sourceStorage)
+func (w *ReplicationWorker) Start(ctx context.Context) {
+	go func() {
+		for task := range w.taskQueue {
+			err := w.replicate(ctx, &task)
+			if err != nil {
+				w.resultChan <- Result{ObjectID: task.ObjectID, Storage: entity.Storage{}, Error: err}
+				continue
+			}
+			w.resultChan <- Result{ObjectID: task.ObjectID, Storage: task.TargetStorage, Error: nil}
+		}
+	}()
+}
+
+func (w *ReplicationWorker) replicate(ctx context.Context, task *entity.ReplicationTask) error {
+	log.Infof("Worker with id %d receive replication task", w.id)
+	log.Infof("Get task to replicate from source %s to target %s", task.SourceStorage.Bucket, task.TargetStorage.Bucket)
+	sourceRepo, err := w.getAccountByBucket(ctx, task.SourceStorage)
 	if err != nil {
 		return err
 	}
 
-	log.Infof("check existence of  object with id %s", objectId)
-	object, err := sourceRepo.GetObject(ctx, sourceStorage.Bucket, objectId)
+	log.Infof("check existence of  object with id %s", task.ObjectID)
+	object, err := sourceRepo.GetObject(ctx, task.SourceStorage.Bucket, task.ObjectID)
 	if err != nil {
 		return err
 	}
@@ -42,18 +66,18 @@ func (s *ReplicationService) Replicate(ctx context.Context, objectId string, pri
 		return ErrObjectNotFound
 	}
 
-	targetRepo, err := s.getAccountByBucket(ctx, targetStorage)
+	targetRepo, err := w.getAccountByBucket(ctx, task.TargetStorage)
 	if err != nil {
 		return err
 	}
 
-	uploadID, err := targetRepo.Create(ctx, targetStorage.Bucket, objectId, nil)
+	uploadID, err := targetRepo.Create(ctx, task.TargetStorage.Bucket, task.ObjectID, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create upload: %v", err)
 	}
 
-	log.Infof("Create upload for object with ID %s", objectId)
-	upload := entity.NewUpload(uploadID, objectId, object.Size, 0, entity.Active, nil, entity.Storage{ProviderID: targetRepo.GetProviderID(ctx), Bucket: targetStorage.Bucket})
+	log.Infof("Create upload for object with ID %s", task.ObjectID)
+	upload := entity.NewUpload(uploadID, task.ObjectID, object.Size, 0, entity.Active, nil, entity.Storage{ProviderID: targetRepo.GetProviderID(ctx), Bucket: task.TargetStorage.Bucket})
 	offset := 0
 
 	for {
@@ -62,7 +86,7 @@ func (s *ReplicationService) Replicate(ctx context.Context, objectId string, pri
 			break
 		}
 
-		data, err := sourceRepo.DownloadObject(ctx, sourceStorage.Bucket, objectId, int64(offset), int64(offset)+int64(chunkSize))
+		data, err := sourceRepo.DownloadObject(ctx, task.SourceStorage.Bucket, task.ObjectID, int64(offset), int64(offset)+int64(chunkSize))
 		if err != nil {
 			return err
 		}
@@ -91,13 +115,13 @@ func (s *ReplicationService) Replicate(ctx context.Context, objectId string, pri
 	if err != nil {
 		return fmt.Errorf("failed to finish upload: %v", err)
 	}
-
+	log.Info("Replication process done")
 	return nil
 }
 
-func (s *ReplicationService) getAccountByBucket(ctx context.Context, st entity.Storage) (entity.ObjectRepository, error) {
+func (w *ReplicationWorker) getAccountByBucket(ctx context.Context, st entity.Storage) (entity.ObjectRepository, error) {
 	log.Info("search bucket")
-	accounts, err := s.aRepo.ListByProvider(ctx, entity.Provider(st.ProviderID))
+	accounts, err := w.aRepo.ListByProvider(ctx, entity.Provider(st.ProviderID))
 	if err != nil {
 		log.Errorf("failed to choose account: failed to list accounts: %v", err.Error())
 		return nil, err
