@@ -1,0 +1,5 @@
+database:
+  host: mongo
+  username: gorynych
+  password: password
+  database: gorynych

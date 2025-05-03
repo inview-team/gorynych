@@ -1,4 +1,12 @@
 services:
+    gorynych:
+        image: gorynych
+        environment:
+          SERVICE_CONFIG_PATH: /etc/gorynych/config.yaml
+        volumes:
+          - ./config-example.yaml:/etc/gorynych/config.yaml:ro
+        ports:
+          - 30000:30000
     mongo:
         image: mongo
         environment:

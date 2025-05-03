@@ -31,17 +31,8 @@ func ReplicateFile(s *service.WorkerService) http.Handler {
 	})
 }
 
-func GetResults(s *service.WorkerService) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		result := s.GetResult()
-		w.WriteHeader(http.StatusAccepted)
-		json.NewEncoder(w).Encode()
-	})
-}
-
 func makeTaskRoutes(r *mux.Router, app *application.Application) {
 	path := "/tasks"
 	serviceRouter := r.PathPrefix(path).Subrouter()
 	serviceRouter.Handle("/replicate/{object_id}", ReplicateFile(app.WorkerService)).Methods("POST")
-	serviceRouter.Handle("/replicate", GetResults(app.WorkerService)).Methods("GET")
 }
