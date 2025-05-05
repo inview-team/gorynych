@@ -6,23 +6,25 @@ import (
 	"sync"
 
 	"github.com/inview-team/gorynych/internal/domain/entity"
-	"github.com/inview-team/gorynych/pkg/storage/s3/yandex"
+	"github.com/inview-team/gorynych/internal/infrastructure/s3"
 
 	log "github.com/sirupsen/logrus"
 )
 
 type UploadService struct {
-	mu          sync.Mutex
-	uploads     map[string]*entity.Upload
-	uploadRepo  entity.UploadRepository
-	accountRepo entity.AccountRepository
+	mu           sync.Mutex
+	uploads      map[string]*entity.Upload
+	uploadRepo   entity.UploadRepository
+	providerRepo entity.ProviderRepository
+	accountRepo  entity.AccountRepository
 }
 
-func NewUploadService(uRepo entity.UploadRepository, aRepo entity.AccountRepository) *UploadService {
+func NewUploadService(uRepo entity.UploadRepository, aRepo entity.AccountRepository, pRepo entity.ProviderRepository) *UploadService {
 	return &UploadService{
-		uploads:     make(map[string]*entity.Upload),
-		uploadRepo:  uRepo,
-		accountRepo: aRepo,
+		uploads:      make(map[string]*entity.Upload),
+		uploadRepo:   uRepo,
+		accountRepo:  aRepo,
+		providerRepo: pRepo,
 	}
 }
 
@@ -31,21 +33,21 @@ func (s *UploadService) CreateUpload(ctx context.Context, size int64, metadata m
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	oRepo, bucket, err := s.chooseAccount(ctx)
+	oRepo, storage, err := s.chooseAccount(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to create upload: %w", err)
 	}
 
-	log.Infof("Choose provider: %s and bucket %s", oRepo.GetProviderID(ctx), bucket)
+	log.Infof("Choose provider: %s and bucket %s", storage.ProviderID, storage.Bucket)
 
 	objectID := entity.NewObjectID()
-	uploadID, err := oRepo.Create(ctx, bucket, objectID, metadata)
+	uploadID, err := oRepo.Create(ctx, storage.Bucket, objectID, metadata)
 	if err != nil {
 		return "", fmt.Errorf("failed to create upload: %v", err)
 	}
 
 	log.Infof("Create upload for object with ID %s", objectID)
-	upload := entity.NewUpload(uploadID, objectID, size, 0, entity.Active, nil, entity.Storage{ProviderID: oRepo.GetProviderID(ctx), Bucket: bucket})
+	upload := entity.NewUpload(uploadID, objectID, size, 0, entity.Active, nil, *storage)
 
 	s.uploads[objectID] = upload
 	err = s.uploadRepo.Add(ctx, upload)
@@ -56,20 +58,25 @@ func (s *UploadService) CreateUpload(ctx context.Context, size int64, metadata m
 	return objectID, nil
 }
 
-func (s *UploadService) chooseAccount(ctx context.Context) (entity.ObjectRepository, string, error) {
+func (s *UploadService) chooseAccount(ctx context.Context) (entity.ObjectRepository, *entity.Storage, error) {
 	log.Info("choose account for upload")
-	accounts, err := s.accountRepo.ListByProvider(ctx, entity.Yandex)
+	accounts, err := s.accountRepo.List(ctx)
 	if err != nil {
 		log.Errorf("failed to choose account: failed to list accounts: %v", err.Error())
-		return nil, "", err
+		return nil, nil, err
 	}
 
 	if len(accounts) == 0 {
-		return nil, "", ErrNoAvailableAccounts
+		return nil, nil, ErrNoAvailableAccounts
 	}
 
 	for _, account := range accounts {
-		oRepo, err := yandex.New(ctx, account.KeyID, account.Secret)
+		provider, err := s.providerRepo.GetByID(ctx, account.ProviderID)
+		if err != nil {
+			log.Errorf("failed to choose account: failed to find provider: %v", err.Error())
+			return nil, nil, err
+		}
+		oRepo, err := s3.New(ctx, provider.Endpoint, account.Region, account.AccessKey, account.Secret)
 		if err != nil {
 			log.Errorf("failed to init storage by account with id: %s", account.ID)
 			continue
@@ -82,9 +89,9 @@ func (s *UploadService) chooseAccount(ctx context.Context) (entity.ObjectReposit
 		}
 		log.Infof("found %d buckets: %v", len(buckets), buckets)
 
-		return oRepo, buckets[0], nil
+		return oRepo, &entity.Storage{ProviderID: account.ProviderID, Bucket: buckets[0]}, nil
 	}
-	return nil, "", ErrNoAvailableBuckets
+	return nil, nil, ErrNoAvailableBuckets
 }
 
 func (s *UploadService) WritePart(ctx context.Context, objectID string, offset int64, data []byte) (int64, error) {
@@ -157,7 +164,12 @@ func (s *UploadService) WritePart(ctx context.Context, objectID string, offset i
 
 func (s *UploadService) getAccountByBucket(ctx context.Context, st entity.Storage) (entity.ObjectRepository, error) {
 	log.Info("search bucket")
-	accounts, err := s.accountRepo.ListByProvider(ctx, entity.Provider(st.ProviderID))
+	provider, err := s.providerRepo.GetByID(ctx, st.ProviderID)
+	if err != nil {
+		log.Errorf("failed to choose account: failed to find provider: %v", err.Error())
+		return nil, err
+	}
+	accounts, err := s.accountRepo.ListByProvider(ctx, st.ProviderID)
 	if err != nil {
 		log.Errorf("failed to choose account: failed to list accounts: %v", err.Error())
 		return nil, err
@@ -168,7 +180,7 @@ func (s *UploadService) getAccountByBucket(ctx context.Context, st entity.Storag
 	}
 
 	for _, account := range accounts {
-		oRepo, err := yandex.New(ctx, account.KeyID, account.Secret)
+		oRepo, err := s3.New(ctx, provider.Endpoint, account.Region, account.AccessKey, account.Secret)
 		if err != nil {
 			log.Errorf("failed to init storage by account with id: %s", account.ID)
 			continue

@@ -1,7 +1,8 @@
 package controllers
 
 type Account struct {
-	Provider string `json:"provider"`
-	KeyID    string `json:"key_id"`
-	Secret   string `json:"secret"`
+	Provider  string `json:"provider"`
+	Region    string `json:"region"`
+	AccessKey string `json:"access_key"`
+	Secret    string `json:"secret"`
 }

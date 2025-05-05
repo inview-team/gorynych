@@ -10,17 +10,18 @@ import (
 )
 
 type ServiceAccount struct {
-	ID       string
-	Provider Provider
-	KeyID    string
-	Secret   string
+	ID         string
+	ProviderID string
+	Region     string
+	AccessKey  string
+	Secret     string
 }
 
-type Provider string
-
-const (
-	Yandex Provider = "yandex"
-)
+type Provider struct {
+	ID       string
+	Name     string
+	Endpoint string
+}
 
 func NewAccountID() string {
 	id := make([]byte, 16)
@@ -31,17 +32,32 @@ func NewAccountID() string {
 	return hex.EncodeToString(id)
 }
 
-func NewServiceAccount(id string, provider Provider, keyId string, secret string) *ServiceAccount {
+func NewServiceAccount(id string, providerID string, region string, keyId string, secret string) *ServiceAccount {
 	return &ServiceAccount{
+		ID:         id,
+		ProviderID: providerID,
+		Region:     region,
+		AccessKey:  keyId,
+		Secret:     secret,
+	}
+}
+
+func NewProvider(id string, name string, endpoint string) *Provider {
+	return &Provider{
 		ID:       id,
-		Provider: provider,
-		KeyID:    keyId,
-		Secret:   secret,
+		Name:     name,
+		Endpoint: endpoint,
 	}
 }
 
 type AccountRepository interface {
 	Add(ctx context.Context, account *ServiceAccount) error
 	GetByID(ctx context.Context, accountID string) (*ServiceAccount, error)
-	ListByProvider(ctx context.Context, provider Provider) ([]*ServiceAccount, error)
+	ListByProvider(ctx context.Context, provider string) ([]*ServiceAccount, error)
+	List(ctx context.Context) ([]*ServiceAccount, error)
+}
+
+type ProviderRepository interface {
+	GetByID(ctx context.Context, providerID string) (*Provider, error)
+	List(ctx context.Context) ([]*Provider, error)
 }

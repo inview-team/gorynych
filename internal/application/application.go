@@ -13,14 +13,18 @@ type Application struct {
 	WorkerService  *service.WorkerService
 }
 
-func New(ctx context.Context, client *mongo.Client) *Application {
+func New(ctx context.Context, client *mongo.Client) (*Application, error) {
 	aRepo := mongo.NewAccountRepository(client)
 	uRepo := mongo.NewUploadRepository(client)
-	workerService := service.NewWorkerService(aRepo, 5)
+	pRepo, err := mongo.NewProviderRepository(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	workerService := service.NewWorkerService(aRepo, pRepo, 5)
 	workerService.Start(ctx)
 	return &Application{
-		service.NewUploadService(uRepo, aRepo),
+		service.NewUploadService(uRepo, aRepo, pRepo),
 		service.NewAccountService(aRepo),
 		workerService,
-	}
+	}, nil
 }

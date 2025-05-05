@@ -41,8 +41,26 @@ func (r *AccountRepository) GetByID(ctx context.Context, accountID string) (*ent
 	return mAccount.ToEntity(), nil
 }
 
-func (r *AccountRepository) ListByProvider(ctx context.Context, provider entity.Provider) ([]*entity.ServiceAccount, error) {
-	cursor, err := r.coll.Find(ctx, bson.M{"provider": provider})
+func (r *AccountRepository) ListByProvider(ctx context.Context, provider string) ([]*entity.ServiceAccount, error) {
+	cursor, err := r.coll.Find(ctx, bson.M{"provider_id": provider})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var accounts []*entity.ServiceAccount
+	for cursor.Next(ctx) {
+		var mAccount model.Account
+		if err := cursor.Decode(&mAccount); err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, mAccount.ToEntity())
+	}
+	return accounts, nil
+}
+
+func (r *AccountRepository) List(ctx context.Context) ([]*entity.ServiceAccount, error) {
+	cursor, err := r.coll.Find(ctx, bson.M{})
 	if err != nil {
 		return nil, err
 	}

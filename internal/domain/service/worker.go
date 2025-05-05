@@ -7,24 +7,26 @@ import (
 )
 
 type WorkerService struct {
-	accountRepo entity.AccountRepository
-	taskQueue   chan entity.ReplicationTask
-	resultChan  chan Result
-	workerCount int
+	accountRepo  entity.AccountRepository
+	providerRepo entity.ProviderRepository
+	taskQueue    chan entity.ReplicationTask
+	resultChan   chan Result
+	workerCount  int
 }
 
-func NewWorkerService(aRepo entity.AccountRepository, workerCount int) *WorkerService {
+func NewWorkerService(aRepo entity.AccountRepository, pRepo entity.ProviderRepository, workerCount int) *WorkerService {
 	return &WorkerService{
-		accountRepo: aRepo,
-		taskQueue:   make(chan entity.ReplicationTask),
-		resultChan:  make(chan Result),
-		workerCount: workerCount,
+		accountRepo:  aRepo,
+		providerRepo: pRepo,
+		taskQueue:    make(chan entity.ReplicationTask),
+		resultChan:   make(chan Result),
+		workerCount:  workerCount,
 	}
 }
 
 func (s *WorkerService) Start(ctx context.Context) {
 	for i := 0; i < s.workerCount; i++ {
-		worker := NewReplicationService(i, s.taskQueue, s.resultChan, s.accountRepo)
+		worker := NewReplicationService(i, s.taskQueue, s.resultChan, s.accountRepo, s.providerRepo)
 		worker.Start(ctx)
 	}
 }

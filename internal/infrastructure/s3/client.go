@@ -1,4 +1,4 @@
-package yandex
+package s3
 
 import (
 	"bytes"
@@ -19,15 +19,13 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-const ProviderID string = "yandex"
-
-type ClientYandex struct {
+type ClientS3 struct {
 	s3Client *s3.Client
 }
 
-func New(ctx context.Context, id, secret string) (*ClientYandex, error) {
+func New(ctx context.Context, endpoint, region, accessKey, secret string) (*ClientS3, error) {
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithCredentialsProvider(
-		credentials.NewStaticCredentialsProvider(id, secret, "")),
+		credentials.NewStaticCredentialsProvider(accessKey, secret, "")),
 	)
 
 	if err != nil {
@@ -36,20 +34,16 @@ func New(ctx context.Context, id, secret string) (*ClientYandex, error) {
 		return nil, err
 	}
 	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
-		o.BaseEndpoint = aws.String("https://storage.yandexcloud.net")
-		o.Region = "ru-central1"
+		o.BaseEndpoint = aws.String(endpoint)
+		o.Region = region
 	})
 
-	return &ClientYandex{
+	return &ClientS3{
 		s3Client: client,
 	}, nil
 }
 
-func (s *ClientYandex) GetProviderID(ctx context.Context) string {
-	return ProviderID
-}
-
-func (s *ClientYandex) Create(ctx context.Context, storageID string, id string, metadata map[string]string) (string, error) {
+func (s *ClientS3) Create(ctx context.Context, storageID string, id string, metadata map[string]string) (string, error) {
 	input := &s3.CreateMultipartUploadInput{
 		Bucket:   aws.String(storageID),
 		Key:      aws.String(id),
@@ -64,7 +58,7 @@ func (s *ClientYandex) Create(ctx context.Context, storageID string, id string, 
 	return *resp.UploadId, nil
 }
 
-func (s *ClientYandex) WritePart(ctx context.Context, bucket string, uploadID string, objectID string, position int, data []byte) (string, error) {
+func (s *ClientS3) WritePart(ctx context.Context, bucket string, uploadID string, objectID string, position int, data []byte) (string, error) {
 	input := &s3.UploadPartInput{
 		Bucket:     aws.String(bucket),
 		Key:        aws.String(objectID),
@@ -80,7 +74,7 @@ func (s *ClientYandex) WritePart(ctx context.Context, bucket string, uploadID st
 	return *resp.ETag, nil
 }
 
-func (s *ClientYandex) FinishUpload(ctx context.Context, upload *entity.Upload) error {
+func (s *ClientS3) FinishUpload(ctx context.Context, upload *entity.Upload) error {
 	parts := make([]types.CompletedPart, len(upload.Parts))
 	for i, part := range upload.Parts {
 		partNumber := part.Position
@@ -105,7 +99,7 @@ func (s *ClientYandex) FinishUpload(ctx context.Context, upload *entity.Upload) 
 	return nil
 }
 
-func (s *ClientYandex) ListBuckets(ctx context.Context) ([]string, error) {
+func (s *ClientS3) ListBuckets(ctx context.Context) ([]string, error) {
 	result, err := s.s3Client.ListBuckets(ctx, &s3.ListBucketsInput{})
 	if err != nil {
 		fmt.Print("failed to list buckets")
@@ -120,7 +114,7 @@ func (s *ClientYandex) ListBuckets(ctx context.Context) ([]string, error) {
 	return buckets, nil
 }
 
-func (s *ClientYandex) IsBucketExist(ctx context.Context, bucket string) (bool, error) {
+func (s *ClientS3) IsBucketExist(ctx context.Context, bucket string) (bool, error) {
 	input := &s3.HeadBucketInput{
 		Bucket: aws.String(bucket),
 	}
@@ -138,7 +132,7 @@ func (s *ClientYandex) IsBucketExist(ctx context.Context, bucket string) (bool, 
 }
 
 // DownloadObject implements entity.ObjectRepository.
-func (s *ClientYandex) DownloadObject(ctx context.Context, bucket string, objectID string, startOffset int64, endOffset int64) ([]byte, error) {
+func (s *ClientS3) DownloadObject(ctx context.Context, bucket string, objectID string, startOffset int64, endOffset int64) ([]byte, error) {
 	input := &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(objectID),
@@ -160,7 +154,7 @@ func (s *ClientYandex) DownloadObject(ctx context.Context, bucket string, object
 }
 
 // GetObject implements entity.ObjectRepository.
-func (s *ClientYandex) GetObject(ctx context.Context, bucket string, objectID string) (*entity.Object, error) {
+func (s *ClientS3) GetObject(ctx context.Context, bucket string, objectID string) (*entity.Object, error) {
 	input := &s3.HeadObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(objectID),

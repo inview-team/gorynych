@@ -17,9 +17,9 @@ func NewAccountService(aRepo entity.AccountRepository) *AccountService {
 	}
 }
 
-func (s *AccountService) AddAccount(ctx context.Context, provider entity.Provider, keyID string, secret string) (string, error) {
+func (s *AccountService) AddAccount(ctx context.Context, provider string, region string, accessKey string, secret string) (string, error) {
 	log.Infof("add new account")
-	account := entity.NewServiceAccount(entity.NewAccountID(), provider, keyID, secret)
+	account := entity.NewServiceAccount(entity.NewAccountID(), provider, region, accessKey, secret)
 	err := s.aRepo.Add(ctx, account)
 	if err != nil {
 		log.Errorf("failed to add account: %v", err.Error())
@@ -28,7 +28,7 @@ func (s *AccountService) AddAccount(ctx context.Context, provider entity.Provide
 	return account.ID, nil
 }
 
-func (s *AccountService) ListAccountByProvider(ctx context.Context, provider entity.Provider) ([]*entity.ServiceAccount, error) {
+func (s *AccountService) ListAccountByProvider(ctx context.Context, provider string) ([]*entity.ServiceAccount, error) {
 	log.Infof("search service accounts of provider %s", provider)
 	accounts, err := s.aRepo.ListByProvider(ctx, provider)
 	if err != nil {

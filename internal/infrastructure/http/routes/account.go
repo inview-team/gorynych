@@ -6,7 +6,6 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/inview-team/gorynych/internal/application"
-	"github.com/inview-team/gorynych/internal/domain/entity"
 	"github.com/inview-team/gorynych/internal/domain/service"
 	"github.com/inview-team/gorynych/internal/infrastructure/http/controllers"
 	"github.com/inview-team/gorynych/internal/infrastructure/http/views"
@@ -26,7 +25,7 @@ func AddAccount(s *service.AccountService) http.Handler {
 			return
 		}
 
-		id, err := s.AddAccount(ctx, entity.Provider(cAccount.Provider), cAccount.KeyID, cAccount.Secret)
+		id, err := s.AddAccount(ctx, cAccount.Provider, cAccount.Region, cAccount.AccessKey, cAccount.Secret)
 		if err != nil {
 			http.Error(w, "", http.StatusInternalServerError)
 		}

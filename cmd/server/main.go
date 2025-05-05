@@ -33,7 +33,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	app := application.New(ctx, client)
+	app, err := application.New(ctx, client)
+	if err != nil {
+		log.Errorf("failed to init application: %v", err.Error())
+		os.Exit(1)
+	}
 
 	srv := server.NewServer(app)
 	srv.Start(ctx)

@@ -5,13 +5,14 @@ import (
 	"fmt"
 
 	"github.com/inview-team/gorynych/internal/domain/entity"
-	"github.com/inview-team/gorynych/pkg/storage/s3/yandex"
+	"github.com/inview-team/gorynych/internal/infrastructure/s3"
 	log "github.com/sirupsen/logrus"
 )
 
 type ReplicationWorker struct {
 	id         int
 	aRepo      entity.AccountRepository
+	pRepo      entity.ProviderRepository
 	taskQueue  <-chan entity.ReplicationTask
 	resultChan chan<- Result
 }
@@ -22,12 +23,13 @@ type Result struct {
 	Error    error
 }
 
-func NewReplicationService(id int, taskQueue <-chan entity.ReplicationTask, resultChan chan<- Result, aRepo entity.AccountRepository) *ReplicationWorker {
+func NewReplicationService(id int, taskQueue <-chan entity.ReplicationTask, resultChan chan<- Result, aRepo entity.AccountRepository, pRepo entity.ProviderRepository) *ReplicationWorker {
 	return &ReplicationWorker{
 		id:         id,
 		taskQueue:  taskQueue,
 		resultChan: resultChan,
 		aRepo:      aRepo,
+		pRepo:      pRepo,
 	}
 }
 
@@ -77,7 +79,7 @@ func (w *ReplicationWorker) replicate(ctx context.Context, task *entity.Replicat
 	}
 
 	log.Infof("Create upload for object with ID %s", task.ObjectID)
-	upload := entity.NewUpload(uploadID, task.ObjectID, object.Size, 0, entity.Active, nil, entity.Storage{ProviderID: targetRepo.GetProviderID(ctx), Bucket: task.TargetStorage.Bucket})
+	upload := entity.NewUpload(uploadID, task.ObjectID, object.Size, 0, entity.Active, nil, entity.Storage{ProviderID: task.TargetStorage.ProviderID, Bucket: task.TargetStorage.Bucket})
 	offset := 0
 
 	for {
@@ -121,7 +123,13 @@ func (w *ReplicationWorker) replicate(ctx context.Context, task *entity.Replicat
 
 func (w *ReplicationWorker) getAccountByBucket(ctx context.Context, st entity.Storage) (entity.ObjectRepository, error) {
 	log.Info("search bucket")
-	accounts, err := w.aRepo.ListByProvider(ctx, entity.Provider(st.ProviderID))
+	provider, err := w.pRepo.GetByID(ctx, st.ProviderID)
+	if err != nil {
+		log.Errorf("failed to choose account: failed to find provider: %v", err.Error())
+		return nil, err
+	}
+	accounts, err := w.aRepo.ListByProvider(ctx, st.ProviderID)
+
 	if err != nil {
 		log.Errorf("failed to choose account: failed to list accounts: %v", err.Error())
 		return nil, err
@@ -132,7 +140,7 @@ func (w *ReplicationWorker) getAccountByBucket(ctx context.Context, st entity.St
 	}
 
 	for _, account := range accounts {
-		oRepo, err := yandex.New(ctx, account.KeyID, account.Secret)
+		oRepo, err := s3.New(ctx, provider.Endpoint, account.Region, account.AccessKey, account.Secret)
 		if err != nil {
 			log.Errorf("failed to init storage by account with id: %s", account.ID)
 			continue
