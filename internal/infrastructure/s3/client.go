@@ -58,25 +58,26 @@ func (s *ClientS3) Create(ctx context.Context, storageID string, id string, meta
 	return *resp.UploadId, nil
 }
 
-func (s *ClientS3) WritePart(ctx context.Context, bucket string, uploadID string, objectID string, position int, data []byte) (string, error) {
+func (s *ClientS3) WritePart(ctx context.Context, bucket string, uploadID string, objectID string, position int, data *[]byte) (string, error) {
 	input := &s3.UploadPartInput{
 		Bucket:     aws.String(bucket),
 		Key:        aws.String(objectID),
 		UploadId:   aws.String(uploadID),
 		PartNumber: aws.Int32(int32(position)),
-		Body:       bytes.NewReader(data),
+		Body:       bytes.NewReader(*data),
 	}
 
 	resp, err := s.s3Client.UploadPart(ctx, input)
 	if err != nil {
 		return "", fmt.Errorf("failed to upload chunk: %v", err)
 	}
+
 	return *resp.ETag, nil
 }
 
-func (s *ClientS3) FinishUpload(ctx context.Context, upload *entity.Upload) error {
-	parts := make([]types.CompletedPart, len(upload.Parts))
-	for i, part := range upload.Parts {
+func (s *ClientS3) FinishUpload(ctx context.Context, bucket, uploadID, objectID string, uploadedParts []entity.UploadPart) error {
+	parts := make([]types.CompletedPart, len(uploadedParts))
+	for i, part := range uploadedParts {
 		partNumber := part.Position
 		parts[i] = types.CompletedPart{
 			PartNumber: aws.Int32(int32(partNumber)),
@@ -85,9 +86,9 @@ func (s *ClientS3) FinishUpload(ctx context.Context, upload *entity.Upload) erro
 	}
 
 	input := &s3.CompleteMultipartUploadInput{
-		Bucket:          aws.String(upload.Storage.Bucket),
-		Key:             aws.String(upload.ObjectID),
-		UploadId:        aws.String(upload.ID),
+		Bucket:          aws.String(bucket),
+		Key:             aws.String(objectID),
+		UploadId:        aws.String(uploadID),
 		MultipartUpload: &types.CompletedMultipartUpload{Parts: parts},
 	}
 
@@ -132,7 +133,7 @@ func (s *ClientS3) IsBucketExist(ctx context.Context, bucket string) (bool, erro
 }
 
 // DownloadObject implements entity.ObjectRepository.
-func (s *ClientS3) DownloadObject(ctx context.Context, bucket string, objectID string, startOffset int64, endOffset int64) ([]byte, error) {
+func (s *ClientS3) DownloadObject(ctx context.Context, bucket string, objectID string, startOffset int64, endOffset int64) (*[]byte, error) {
 	input := &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(objectID),
@@ -150,7 +151,7 @@ func (s *ClientS3) DownloadObject(ctx context.Context, bucket string, objectID s
 
 	data, _ := io.ReadAll(output.Body)
 	defer output.Body.Close()
-	return data, nil
+	return &data, nil
 }
 
 // GetObject implements entity.ObjectRepository.

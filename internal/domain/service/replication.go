@@ -34,7 +34,7 @@ func NewReplicationService(id int, taskQueue <-chan entity.ReplicationTask, resu
 }
 
 const (
-	chunkSize int = 100 * 1024 * 1024
+	chunkSize int = 5 * 1024 * 1024
 )
 
 func (w *ReplicationWorker) Start(ctx context.Context) {
@@ -93,7 +93,7 @@ func (w *ReplicationWorker) replicate(ctx context.Context, task *entity.Replicat
 			return err
 		}
 
-		log.Infof("Download part of file %d", len(data))
+		log.Infof("Download part of file %d", len(*data))
 
 		var position int
 		if upload.Parts != nil {
@@ -113,7 +113,7 @@ func (w *ReplicationWorker) replicate(ctx context.Context, task *entity.Replicat
 		upload.AddPartial(partID, position)
 	}
 
-	err = targetRepo.FinishUpload(ctx, upload)
+	err = targetRepo.FinishUpload(ctx, upload.Storage.Bucket, uploadID, upload.ObjectID, upload.Parts)
 	if err != nil {
 		return fmt.Errorf("failed to finish upload: %v", err)
 	}

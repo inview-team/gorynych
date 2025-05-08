@@ -28,10 +28,10 @@ func NewObjectID() string {
 
 type ObjectRepository interface {
 	Create(ctx context.Context, bucket string, id string, metadata map[string]string) (string, error)
-	WritePart(ctx context.Context, bucket string, uploadID string, objectID string, position int, data []byte) (string, error)
-	FinishUpload(ctx context.Context, upload *Upload) error
+	WritePart(ctx context.Context, bucket string, uploadID string, objectID string, position int, data *[]byte) (string, error)
+	FinishUpload(ctx context.Context, bucket, uploadID, objectID string, parts []UploadPart) error
 	ListBuckets(ctx context.Context) ([]string, error)
 	IsBucketExist(ctx context.Context, bucket string) (bool, error)
 	GetObject(ctx context.Context, bucket string, objectID string) (*Object, error)
-	DownloadObject(ctx context.Context, bucket string, objectID string, startOffset int64, endOffset int64) ([]byte, error)
+	DownloadObject(ctx context.Context, bucket string, objectID string, startOffset int64, endOffset int64) (*[]byte, error)
 }

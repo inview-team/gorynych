@@ -94,7 +94,7 @@ func (s *UploadService) chooseAccount(ctx context.Context) (entity.ObjectReposit
 	return nil, nil, ErrNoAvailableBuckets
 }
 
-func (s *UploadService) WritePart(ctx context.Context, objectID string, offset int64, data []byte) (int64, error) {
+func (s *UploadService) WritePart(ctx context.Context, objectID string, offset int64, data *[]byte) (int64, error) {
 	log.Infof("write part to object with id %s", objectID)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -119,7 +119,7 @@ func (s *UploadService) WritePart(ctx context.Context, objectID string, offset i
 		return 0, ErrWrongOffset
 	}
 
-	if offset+int64(len(data)) > upload.Size {
+	if offset+int64(len(*data)) > upload.Size {
 		return 0, ErrUploadBig
 	}
 
@@ -142,11 +142,11 @@ func (s *UploadService) WritePart(ctx context.Context, objectID string, offset i
 		return 0, fmt.Errorf("failed to upload chunk: %w", err)
 	}
 
-	upload.SetOffset(offset + int64(len(data)))
+	upload.SetOffset(offset + int64(len(*data)))
 	upload.AddPartial(partID, position)
 
 	if upload.Offset == upload.Size {
-		err := oRepo.FinishUpload(ctx, upload)
+		err := oRepo.FinishUpload(ctx, upload.Storage.Bucket, upload.ID, upload.ObjectID, upload.Parts)
 		if err != nil {
 			return 0, fmt.Errorf("failed to finish upload: %v", err)
 		}

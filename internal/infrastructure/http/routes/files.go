@@ -56,8 +56,9 @@ func WriteChunk(s *service.UploadService) http.Handler {
 		if err != nil {
 			http.Error(w, "", http.StatusBadRequest)
 		}
+		defer r.Body.Close()
 
-		newOffset, err := s.WritePart(ctx, objectID, offset, bodyBuffer)
+		newOffset, err := s.WritePart(ctx, objectID, offset, &bodyBuffer)
 		if err != nil {
 			if errors.Is(err, service.ErrUploadNotFound) {
 				http.Error(w, "", http.StatusNotFound)

@@ -17,11 +17,12 @@ func NewProviderRepository(ctx context.Context, client *Client) (*ProviderReposi
 	coll := client.Database.Collection("providers")
 
 	for _, provider := range model.Providers {
-		err := coll.FindOne(ctx, bson.M{"_id": provider.ID}).Decode(&model.Providers)
+		count, err := coll.CountDocuments(ctx, bson.M{"_id": provider.ID})
 		if err != nil {
-			if err != mongo.ErrNoDocuments {
-				return nil, err
-			}
+			return nil, err
+		}
+		if count != 0 {
+			continue
 		}
 		_, err = coll.InsertOne(ctx, provider)
 		if err != nil {
