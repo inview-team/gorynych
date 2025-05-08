@@ -34,4 +34,6 @@ type ObjectRepository interface {
 	IsBucketExist(ctx context.Context, bucket string) (bool, error)
 	GetObject(ctx context.Context, bucket string, objectID string) (*Object, error)
 	DownloadObject(ctx context.Context, bucket string, objectID string, startOffset int64, endOffset int64) (*[]byte, error)
+	StreamWritePart(ctx context.Context, bucket string, uploadID string, objectID string, position int, data io.ReadCloser) (string, error)
+	StreamDownloadObject(ctx context.Context, bucket string, objectID string, startOffset int64, endOffset int64) (io.ReadCloser, error)
 }

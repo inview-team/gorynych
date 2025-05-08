@@ -5,12 +5,21 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"time"
 )
 
 type ReplicationTask struct {
+	ID            string
 	ObjectID      string
 	SourceStorage Storage
 	TargetStorage Storage
+}
+
+type ReplicationResult struct {
+	ID    string
+	Start time.Time
+	End   time.Time
+	Error error
 }
 
 func NewReplicationTask(objectID string, sStorage Storage, tStorage Storage) *ReplicationTask {

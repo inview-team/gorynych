@@ -3,62 +3,75 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
+	"sort"
+	"sync"
+	"time"
 
 	"github.com/inview-team/gorynych/internal/domain/entity"
 	"github.com/inview-team/gorynych/internal/infrastructure/s3"
 	log "github.com/sirupsen/logrus"
 )
 
-type ReplicationWorker struct {
-	id         int
-	aRepo      entity.AccountRepository
-	pRepo      entity.ProviderRepository
-	taskQueue  <-chan entity.ReplicationTask
-	resultChan chan<- Result
+const (
+	chunkSize int = 100 * 1024 * 1024
+)
+
+type ReplicationService struct {
+	tasks        <-chan entity.ReplicationTask
+	results      chan<- entity.ReplicationResult
+	accountRepo  entity.AccountRepository
+	providerRepo entity.ProviderRepository
 }
 
-type Result struct {
-	ObjectID string
-	Storage  entity.Storage
-	Error    error
+type PartTask struct {
+	ObjectID       string
+	SourceAccount  *entity.ServiceAccount
+	SourceProvider *entity.Provider
+	TargetAccount  *entity.ServiceAccount
+	TargetProvider *entity.Provider
+	SourceBucket   string
+	TargetBucket   string
+	UploadID       string
+	PartNumber     int
+	Start          int64
+	End            int64
 }
 
-func NewReplicationService(id int, taskQueue <-chan entity.ReplicationTask, resultChan chan<- Result, aRepo entity.AccountRepository, pRepo entity.ProviderRepository) *ReplicationWorker {
-	return &ReplicationWorker{
-		id:         id,
-		taskQueue:  taskQueue,
-		resultChan: resultChan,
-		aRepo:      aRepo,
-		pRepo:      pRepo,
+type PartResult struct {
+	PartNumber int
+	Tag        string
+}
+
+func NewReplicationService(taskQueue <-chan entity.ReplicationTask, resultChan chan<- entity.ReplicationResult, aRepo entity.AccountRepository, pRepo entity.ProviderRepository) *ReplicationService {
+	return &ReplicationService{
+		tasks:        taskQueue,
+		results:      resultChan,
+		accountRepo:  aRepo,
+		providerRepo: pRepo,
 	}
 }
 
-const (
-	chunkSize int = 5 * 1024 * 1024
-)
-
-func (w *ReplicationWorker) Start(ctx context.Context) {
+func (s *ReplicationService) Start(ctx context.Context) {
 	go func() {
-		for task := range w.taskQueue {
-			err := w.replicate(ctx, &task)
-			if err != nil {
-				w.resultChan <- Result{ObjectID: task.ObjectID, Storage: entity.Storage{}, Error: err}
-				continue
-			}
-			w.resultChan <- Result{ObjectID: task.ObjectID, Storage: task.TargetStorage, Error: nil}
+		for task := range s.tasks {
+			start := time.Now()
+			err := s.replicate(ctx, &task)
+			end := time.Now()
+			s.results <- entity.ReplicationResult{ID: task.ID, Start: start, End: end, Error: err}
 		}
 	}()
 }
 
-func (w *ReplicationWorker) replicate(ctx context.Context, task *entity.ReplicationTask) error {
-	log.Infof("Worker with id %d receive replication task", w.id)
-	log.Infof("Get task to replicate from source %s to target %s", task.SourceStorage.Bucket, task.TargetStorage.Bucket)
-	sourceRepo, err := w.getAccountByBucket(ctx, task.SourceStorage)
+func (s *ReplicationService) replicate(ctx context.Context, task *entity.ReplicationTask) error {
+	log.Infof("get task to replicate %s from source %s to target %s", task.ObjectID, task.SourceStorage.Bucket, task.TargetStorage.Bucket)
+	sourceAccount, sourceProvider, err := s.getAccountByBucket(ctx, task.SourceStorage)
 	if err != nil {
 		return err
 	}
 
 	log.Infof("check existence of  object with id %s", task.ObjectID)
+	sourceRepo, err := s3.New(ctx, sourceProvider.Endpoint, sourceAccount.Region, sourceAccount.AccessKey, sourceAccount.Secret)
 	object, err := sourceRepo.GetObject(ctx, task.SourceStorage.Bucket, task.ObjectID)
 	if err != nil {
 		return err
@@ -68,75 +81,96 @@ func (w *ReplicationWorker) replicate(ctx context.Context, task *entity.Replicat
 		return ErrObjectNotFound
 	}
 
-	targetRepo, err := w.getAccountByBucket(ctx, task.TargetStorage)
+	targetAccount, targetProvider, err := s.getAccountByBucket(ctx, task.TargetStorage)
+	if err != nil {
+		return err
+	}
+	targetRepo, err := s3.New(ctx, targetProvider.Endpoint, targetAccount.Region, targetAccount.AccessKey, targetAccount.Secret)
 	if err != nil {
 		return err
 	}
 
+	totalSize := object.Size
+	totalParts := int(int64(totalSize)+int64(chunkSize)-1) / chunkSize
+	fmt.Print(totalParts)
+
 	uploadID, err := targetRepo.Create(ctx, task.TargetStorage.Bucket, task.ObjectID, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create upload: %v", err)
+		log.Errorf("failed to create upload: %v", err)
+		os.Exit(1)
 	}
 
-	log.Infof("Create upload for object with ID %s", task.ObjectID)
-	upload := entity.NewUpload(uploadID, task.ObjectID, object.Size, 0, entity.Active, nil, entity.Storage{ProviderID: task.TargetStorage.ProviderID, Bucket: task.TargetStorage.Bucket})
-	offset := 0
+	tasks := make(chan PartTask, totalParts)
+	results := make(chan PartResult)
 
-	for {
-		log.Infof("Replicate object part from %d to %d", offset, int64(offset)+int64(chunkSize))
-		if offset > int(object.Size) {
-			break
-		}
-
-		data, err := sourceRepo.DownloadObject(ctx, task.SourceStorage.Bucket, task.ObjectID, int64(offset), int64(offset)+int64(chunkSize))
-		if err != nil {
-			return err
-		}
-
-		log.Infof("Download part of file %d", len(*data))
-
-		var position int
-		if upload.Parts != nil {
-			position = len(upload.Parts) + 1
-		} else {
-			position = 1
-		}
-
-		partID, err := targetRepo.WritePart(ctx, upload.Storage.Bucket, upload.ID, upload.ObjectID, position, data)
-		if err != nil {
-			log.Errorf("failed to write part. Reason: %v", err)
-			return fmt.Errorf("failed to upload chunk: %w", err)
-		}
-		log.Infof("Upload chunk with id %s", partID)
-
-		offset += chunkSize
-		upload.AddPartial(partID, position)
+	var wg sync.WaitGroup
+	for i := 1; i <= totalParts; i++ {
+		wg.Add(1)
+		worker := NewWorker(i, tasks, results)
+		go worker.Start(ctx, &wg)
 	}
 
-	err = targetRepo.FinishUpload(ctx, upload.Storage.Bucket, uploadID, upload.ObjectID, upload.Parts)
+	for part := 1; part <= totalParts; part++ {
+		start := int64(part-1) * int64(chunkSize)
+		end := start + int64(chunkSize) - 1
+		if end > totalSize {
+			end = totalSize
+		}
+
+		tasks <- PartTask{
+			ObjectID:       task.ObjectID,
+			SourceAccount:  sourceAccount,
+			SourceProvider: sourceProvider,
+			SourceBucket:   task.SourceStorage.Bucket,
+			TargetAccount:  targetAccount,
+			TargetProvider: targetProvider,
+			TargetBucket:   task.TargetStorage.Bucket,
+			UploadID:       uploadID,
+			PartNumber:     part,
+			Start:          start,
+			End:            end,
+		}
+	}
+	close(tasks)
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var uploadedParts []entity.UploadPart
+	for res := range results {
+		uploadedParts = append(uploadedParts, entity.UploadPart{ID: res.Tag, Position: res.PartNumber})
+	}
+
+	sort.Slice(uploadedParts, func(i, j int) bool {
+		return uploadedParts[i].Position < uploadedParts[j].Position
+	})
+
+	err = targetRepo.FinishUpload(ctx, task.TargetStorage.Bucket, uploadID, task.ObjectID, uploadedParts)
 	if err != nil {
-		return fmt.Errorf("failed to finish upload: %v", err)
+		log.Errorf("failed to finish upload: %v", err.Error())
 	}
-	log.Info("Replication process done")
+
 	return nil
 }
 
-func (w *ReplicationWorker) getAccountByBucket(ctx context.Context, st entity.Storage) (entity.ObjectRepository, error) {
+func (s *ReplicationService) getAccountByBucket(ctx context.Context, st entity.Storage) (*entity.ServiceAccount, *entity.Provider, error) {
 	log.Info("search bucket")
-	provider, err := w.pRepo.GetByID(ctx, st.ProviderID)
+	provider, err := s.providerRepo.GetByID(ctx, st.ProviderID)
 	if err != nil {
 		log.Errorf("failed to choose account: failed to find provider: %v", err.Error())
-		return nil, err
+		return nil, nil, err
 	}
-	accounts, err := w.aRepo.ListByProvider(ctx, st.ProviderID)
+	accounts, err := s.accountRepo.ListByProvider(ctx, st.ProviderID)
 
 	if err != nil {
 		log.Errorf("failed to choose account: failed to list accounts: %v", err.Error())
-		return nil, err
+		return nil, nil, err
 	}
 
 	if len(accounts) == 0 {
-		return nil, ErrNoAvailableAccounts
+		return nil, nil, ErrNoAvailableAccounts
 	}
 
 	for _, account := range accounts {
@@ -154,8 +188,41 @@ func (w *ReplicationWorker) getAccountByBucket(ctx context.Context, st entity.St
 		if !exists {
 			continue
 		}
-		return oRepo, nil
+		return account, provider, nil
 	}
 
-	return nil, ErrNoAvailableBuckets
+	return nil, nil, ErrNoAvailableBuckets
+}
+
+type ReplicationWorker struct {
+	id      int
+	tasks   <-chan PartTask
+	results chan<- PartResult
+}
+
+func NewWorker(id int, tasks <-chan PartTask, results chan<- PartResult) *ReplicationWorker {
+	return &ReplicationWorker{
+		id:      id,
+		tasks:   tasks,
+		results: results,
+	}
+}
+
+func (w *ReplicationWorker) Start(ctx context.Context, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for task := range w.tasks {
+		sourceRepo, _ := s3.New(ctx, task.SourceProvider.Endpoint, task.SourceAccount.Region, task.SourceAccount.AccessKey, task.SourceAccount.Secret)
+		targetRepo, _ := s3.New(ctx, task.TargetProvider.Endpoint, task.TargetAccount.Region, task.TargetAccount.AccessKey, task.TargetAccount.Secret)
+		log.Infof("worker%d: part %d: processing bytes %d-%d...", w.id, task.PartNumber, task.Start, task.End)
+		reader, err := sourceRepo.StreamDownloadObject(ctx, task.SourceBucket, task.ObjectID, task.Start, task.End)
+		if err != nil {
+			log.Errorf("failed to download: %v", err.Error())
+		}
+		partID, err := targetRepo.StreamWritePart(ctx, task.TargetBucket, task.UploadID, task.ObjectID, task.PartNumber, reader)
+		if err != nil {
+			log.Errorf("failed to download: %v", err.Error())
+		}
+		w.results <- PartResult{PartNumber: task.PartNumber, Tag: partID}
+		log.Infof("worker%d: part %d: DONE", w.id, task.PartNumber)
+	}
 }

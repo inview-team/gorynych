@@ -21,3 +21,7 @@ var (
 	ErrNoAvailableAccounts = errors.New("no available accounts")
 	ErrAccountNotFound     = errors.New("account not found")
 )
+
+var (
+	ErrTaskNotFound = errors.New("task not found")
+)

@@ -178,3 +178,39 @@ func (s *ClientS3) GetObject(ctx context.Context, bucket string, objectID string
 		Metadata: output.Metadata,
 	}, nil
 }
+
+func (s *ClientS3) StreamDownloadObject(ctx context.Context, bucket string, objectID string, startOffset int64, endOffset int64) (io.ReadCloser, error) {
+	input := &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(objectID),
+		Range:  aws.String(fmt.Sprintf("bytes=%d-%d", startOffset, endOffset)),
+	}
+
+	output, err := s.s3Client.GetObject(ctx, input)
+	if err != nil {
+		var responseError *awshttp.ResponseError
+		if errors.As(err, &responseError) && responseError.ResponseError.HTTPStatusCode() == http.StatusNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return output.Body, nil
+}
+
+func (s *ClientS3) StreamWritePart(ctx context.Context, bucket string, uploadID string, objectID string, position int, reader io.ReadCloser) (string, error) {
+	input := &s3.UploadPartInput{
+		Bucket:     aws.String(bucket),
+		Key:        aws.String(objectID),
+		UploadId:   aws.String(uploadID),
+		PartNumber: aws.Int32(int32(position)),
+		Body:       reader,
+	}
+
+	resp, err := s.s3Client.UploadPart(ctx, input)
+	if err != nil {
+		return "", fmt.Errorf("failed to upload chunk: %v", err)
+	}
+
+	return *resp.ETag, nil
+}
