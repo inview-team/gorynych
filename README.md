@@ -4,8 +4,7 @@
 
 Gorynych is a multicloud data controller for S3.
 
-Available features:
-
+**Version 0.1.0**:
 * Resumable upload to S3 storage
 * Transfer object from one cloud to another
 
