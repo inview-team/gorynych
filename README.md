@@ -1,6 +1,6 @@
 <h1 align="center" style="border-bottom: none">
     <img alt="Gorynych" src="./resources/logo.png" width="150" height="150"><br>Gorynych
-<h1>
+</h1>
 
 Gorynych is a multicloud data controller for S3.
 
