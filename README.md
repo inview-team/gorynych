@@ -2,8 +2,6 @@
     <img alt="Gorynych" src="./resources/logo.png" width="150" height="150"><br>Gorynych
 <h1>
 
-# Gorynych
-
 Gorynych is a multicloud data controller for S3.
 
 Available features:
