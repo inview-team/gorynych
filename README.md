@@ -1,34 +1,25 @@
+<h1 align="center" style="border-bottom: none">
+    <img alt="Gorynych" src="./resources/logo.png" width="150" height="150"><br>Gorynych
+<h1>
+
 # Gorynych
 
-Multicloud Data Controller for S3 \
-Supported clouds:
+Gorynych is a multicloud data controller for S3.
 
-* Yandex Cloud
+Available features:
 
-## Architecture
+* Resumable upload to S3 storage
+* Transfer object from one cloud to another
 
-![Architecture](./resources/architecture.png)
+## Architecture overview
+![Architecture overview](./resources/architecture.png)
 
-## Environment variables
 
-* **SERVICE_CONFIG_PATH** - path to the local config.yml file
+## Install
 
-## Ports
+### Docker images
 
-**Listen port** - 30000
+Docker images are available on [Docker Hub](https://hub.docker.com/r/inviewteam/gorynych).
 
-## Configuration
+You can launch a Gorynych for trying it out by using docker-compose file in `deployment/docker-compose.yml`.
 
-For configuration see `deployment/config-example.yml` file
-
-## Docker
-
-### Build Docker Image
-
-```bash
-docker build -t gorynych .
-```
-
-### Docker-compose example
-
-Example you can see in `deployment/docker-compose.yml`
