@@ -8,6 +8,8 @@ import (
 	"strconv"
 
 	"github.com/gorilla/mux"
+	log "github.com/sirupsen/logrus"
+
 	"github.com/inview-team/gorynych/internal/application"
 	"github.com/inview-team/gorynych/internal/domain/service"
 	"github.com/inview-team/gorynych/internal/infrastructure/http/controllers"
@@ -28,6 +30,7 @@ func CreateUpload(s *service.UploadService) http.Handler {
 
 		id, err := s.CreateUpload(ctx, size, meta, account, bucket)
 		if err != nil {
+			log.Error(err)
 			http.Error(w, "", http.StatusInternalServerError)
 		}
 
@@ -96,6 +99,8 @@ func GetUploadInformation(s *service.UploadService) http.Handler {
 				http.Error(w, "", http.StatusNotFound)
 				return
 			}
+			log.Error(err)
+			http.Error(w, "", http.StatusInternalServerError)
 		}
 
 		//metaHeader := views.NewResponseMetadata(uploadInfo.Metadata)

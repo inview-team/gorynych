@@ -162,7 +162,7 @@ func (s *UploadService) GetUpload(ctx context.Context, id string) (*entity.Uploa
 }
 
 func (s *UploadService) getAccount(ctx context.Context, st *entity.Storage) (*entity.ServiceAccount, *entity.Provider, error) {
-	log.Info("search bucket")
+	log.Info("search account")
 
 	account, err := s.accountRepo.GetByID(ctx, st.AccountID)
 	if err != nil {
@@ -171,6 +171,7 @@ func (s *UploadService) getAccount(ctx context.Context, st *entity.Storage) (*en
 	if account == nil {
 		return nil, nil, fmt.Errorf("failed to get account: %v", err)
 	}
+	log.Info("account founded")
 
 	provider, err := s.providerRepo.GetByID(ctx, account.ProviderID)
 	if err != nil {
@@ -181,7 +182,7 @@ func (s *UploadService) getAccount(ctx context.Context, st *entity.Storage) (*en
 		return nil, nil, fmt.Errorf("failed to get account: %v", err)
 	}
 
-	oRepo, err := s3.New(ctx, account.ProviderID, account.Region, account.AccessKey, account.Secret)
+	oRepo, err := s3.New(ctx, provider.Endpoint, account.Region, account.AccessKey, account.Secret)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get account: %v", err)
 	}
@@ -195,5 +196,5 @@ func (s *UploadService) getAccount(ctx context.Context, st *entity.Storage) (*en
 		return nil, nil, fmt.Errorf("failed to get account: %v", err)
 	}
 
-	return account, provider, ErrAccountNotFound
+	return account, provider, nil
 }
