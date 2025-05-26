@@ -28,26 +28,39 @@ func NewUploadService(uRepo entity.UploadRepository, aRepo entity.AccountReposit
 	}
 }
 
-func (s *UploadService) CreateUpload(ctx context.Context, size int64, metadata map[string]string) (string, error) {
+func (s *UploadService) CreateUpload(ctx context.Context, size int64, metadata map[string]string, accountID string, bucket string) (string, error) {
 	log.Infof("create new upload")
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	oRepo, storage, err := s.chooseAccount(ctx)
+	storage := entity.Storage{AccountID: accountID, Bucket: bucket}
+	account, provider, err := s.getAccount(ctx, &storage)
 	if err != nil {
-		return "", fmt.Errorf("failed to create upload: %w", err)
+		return "", fmt.Errorf("failed to create upload: %v", err)
 	}
 
-	log.Infof("Choose provider: %s and bucket %s", storage.ProviderID, storage.Bucket)
+	oRepo, err := s3.New(ctx, provider.Endpoint, account.Region, account.AccessKey, account.Secret)
+	if err != nil {
+		return "", fmt.Errorf("failed to create upload: %v", err)
+	}
+
+	bucketExists, err := oRepo.IsBucketExist(ctx, bucket)
+	if err != nil {
+		return "", fmt.Errorf("failed to create upload: %v", err)
+	}
+
+	if !bucketExists {
+		return "", ErrBucketNotFound
+	}
 
 	objectID := entity.NewObjectID()
-	uploadID, err := oRepo.Create(ctx, storage.Bucket, objectID, metadata)
+	uploadID, err := oRepo.Create(ctx, bucket, objectID, metadata)
 	if err != nil {
 		return "", fmt.Errorf("failed to create upload: %v", err)
 	}
 
 	log.Infof("Create upload for object with ID %s", objectID)
-	upload := entity.NewUpload(uploadID, objectID, size, 0, entity.Active, nil, *storage)
+	upload := entity.NewUpload(uploadID, objectID, size, 0, entity.Active, nil, storage)
 
 	s.uploads[objectID] = upload
 	err = s.uploadRepo.Add(ctx, upload)
@@ -56,42 +69,6 @@ func (s *UploadService) CreateUpload(ctx context.Context, size int64, metadata m
 	}
 
 	return objectID, nil
-}
-
-func (s *UploadService) chooseAccount(ctx context.Context) (entity.ObjectRepository, *entity.Storage, error) {
-	log.Info("choose account for upload")
-	accounts, err := s.accountRepo.List(ctx)
-	if err != nil {
-		log.Errorf("failed to choose account: failed to list accounts: %v", err.Error())
-		return nil, nil, err
-	}
-
-	if len(accounts) == 0 {
-		return nil, nil, ErrNoAvailableAccounts
-	}
-
-	for _, account := range accounts {
-		provider, err := s.providerRepo.GetByID(ctx, account.ProviderID)
-		if err != nil {
-			log.Errorf("failed to choose account: failed to find provider: %v", err.Error())
-			return nil, nil, err
-		}
-		oRepo, err := s3.New(ctx, provider.Endpoint, account.Region, account.AccessKey, account.Secret)
-		if err != nil {
-			log.Errorf("failed to init storage by account with id: %s", account.ID)
-			continue
-		}
-
-		buckets, err := oRepo.ListBuckets(ctx)
-		if err != nil {
-			log.Errorf("failed to get bucket: %v", err)
-			continue
-		}
-		log.Infof("found %d buckets: %v", len(buckets), buckets)
-
-		return oRepo, &entity.Storage{ProviderID: account.ProviderID, Bucket: buckets[0]}, nil
-	}
-	return nil, nil, ErrNoAvailableBuckets
 }
 
 func (s *UploadService) WritePart(ctx context.Context, objectID string, offset int64, data *[]byte) (int64, error) {
@@ -114,6 +91,11 @@ func (s *UploadService) WritePart(ctx context.Context, objectID string, offset i
 		}
 	}
 
+	account, provider, err := s.getAccount(ctx, &upload.Storage)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create upload: %v", err)
+	}
+
 	log.Infof("Update upload: %v\n", *upload)
 	if offset != upload.Offset {
 		return 0, ErrWrongOffset
@@ -123,10 +105,9 @@ func (s *UploadService) WritePart(ctx context.Context, objectID string, offset i
 		return 0, ErrUploadBig
 	}
 
-	log.Infof("Search account from Provider %s with access to bucket %s", upload.Storage.ProviderID, upload.Storage.Bucket)
-	oRepo, err := s.getAccountByBucket(ctx, upload.Storage)
+	oRepo, err := s3.New(ctx, provider.Endpoint, account.Region, account.AccessKey, account.Secret)
 	if err != nil {
-		return 0, ErrBucketNotFound
+		return 0, fmt.Errorf("failed to create upload: %v", err)
 	}
 
 	var position int
@@ -162,44 +143,6 @@ func (s *UploadService) WritePart(ctx context.Context, objectID string, offset i
 	return upload.Offset, nil
 }
 
-func (s *UploadService) getAccountByBucket(ctx context.Context, st entity.Storage) (entity.ObjectRepository, error) {
-	log.Info("search bucket")
-	provider, err := s.providerRepo.GetByID(ctx, st.ProviderID)
-	if err != nil {
-		log.Errorf("failed to choose account: failed to find provider: %v", err.Error())
-		return nil, err
-	}
-	accounts, err := s.accountRepo.ListByProvider(ctx, st.ProviderID)
-	if err != nil {
-		log.Errorf("failed to choose account: failed to list accounts: %v", err.Error())
-		return nil, err
-	}
-
-	if len(accounts) == 0 {
-		return nil, ErrNoAvailableAccounts
-	}
-
-	for _, account := range accounts {
-		oRepo, err := s3.New(ctx, provider.Endpoint, account.Region, account.AccessKey, account.Secret)
-		if err != nil {
-			log.Errorf("failed to init storage by account with id: %s", account.ID)
-			continue
-		}
-
-		exists, err := oRepo.IsBucketExist(ctx, st.Bucket)
-		if err != nil {
-			continue
-		}
-
-		if !exists {
-			continue
-		}
-		return oRepo, nil
-	}
-
-	return nil, ErrNoAvailableBuckets
-}
-
 func (s *UploadService) GetUploads() []*entity.Upload {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -216,4 +159,41 @@ func (s *UploadService) GetUpload(ctx context.Context, id string) (*entity.Uploa
 		return nil, ErrUploadNotFound
 	}
 	return upload, nil
+}
+
+func (s *UploadService) getAccount(ctx context.Context, st *entity.Storage) (*entity.ServiceAccount, *entity.Provider, error) {
+	log.Info("search bucket")
+
+	account, err := s.accountRepo.GetByID(ctx, st.AccountID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get account: %v", err)
+	}
+	if account == nil {
+		return nil, nil, fmt.Errorf("failed to get account: %v", err)
+	}
+
+	provider, err := s.providerRepo.GetByID(ctx, account.ProviderID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get account: %v", err)
+	}
+
+	if provider == nil {
+		return nil, nil, fmt.Errorf("failed to get account: %v", err)
+	}
+
+	oRepo, err := s3.New(ctx, account.ProviderID, account.Region, account.AccessKey, account.Secret)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get account: %v", err)
+	}
+
+	exists, err := oRepo.IsBucketExist(ctx, st.Bucket)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get account: %v", err)
+	}
+
+	if !exists {
+		return nil, nil, fmt.Errorf("failed to get account: %v", err)
+	}
+
+	return account, provider, ErrAccountNotFound
 }

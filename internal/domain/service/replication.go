@@ -65,7 +65,7 @@ func (s *ReplicationService) Start(ctx context.Context) {
 
 func (s *ReplicationService) replicate(ctx context.Context, task *entity.ReplicationTask) error {
 	log.Infof("get task to replicate %s from source %s to target %s", task.ObjectID, task.SourceStorage.Bucket, task.TargetStorage.Bucket)
-	sourceAccount, sourceProvider, err := s.getAccountByBucket(ctx, task.SourceStorage)
+	sourceAccount, sourceProvider, err := s.getAccount(ctx, &task.SourceStorage)
 	if err != nil {
 		return err
 	}
@@ -81,7 +81,7 @@ func (s *ReplicationService) replicate(ctx context.Context, task *entity.Replica
 		return ErrObjectNotFound
 	}
 
-	targetAccount, targetProvider, err := s.getAccountByBucket(ctx, task.TargetStorage)
+	targetAccount, targetProvider, err := s.getAccount(ctx, &task.TargetStorage)
 	if err != nil {
 		return err
 	}
@@ -155,43 +155,41 @@ func (s *ReplicationService) replicate(ctx context.Context, task *entity.Replica
 	return nil
 }
 
-func (s *ReplicationService) getAccountByBucket(ctx context.Context, st entity.Storage) (*entity.ServiceAccount, *entity.Provider, error) {
+func (s *ReplicationService) getAccount(ctx context.Context, st *entity.Storage) (*entity.ServiceAccount, *entity.Provider, error) {
 	log.Info("search bucket")
-	provider, err := s.providerRepo.GetByID(ctx, st.ProviderID)
+
+	account, err := s.accountRepo.GetByID(ctx, st.AccountID)
 	if err != nil {
-		log.Errorf("failed to choose account: failed to find provider: %v", err.Error())
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to get account: %v", err)
 	}
-	accounts, err := s.accountRepo.ListByProvider(ctx, st.ProviderID)
+	if account == nil {
+		return nil, nil, fmt.Errorf("failed to get account: %v", err)
+	}
 
+	provider, err := s.providerRepo.GetByID(ctx, account.ProviderID)
 	if err != nil {
-		log.Errorf("failed to choose account: failed to list accounts: %v", err.Error())
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to get account: %v", err)
 	}
 
-	if len(accounts) == 0 {
-		return nil, nil, ErrNoAvailableAccounts
+	if provider == nil {
+		return nil, nil, fmt.Errorf("failed to get account: %v", err)
 	}
 
-	for _, account := range accounts {
-		oRepo, err := s3.New(ctx, provider.Endpoint, account.Region, account.AccessKey, account.Secret)
-		if err != nil {
-			log.Errorf("failed to init storage by account with id: %s", account.ID)
-			continue
-		}
-
-		exists, err := oRepo.IsBucketExist(ctx, st.Bucket)
-		if err != nil {
-			continue
-		}
-
-		if !exists {
-			continue
-		}
-		return account, provider, nil
+	oRepo, err := s3.New(ctx, account.ProviderID, account.Region, account.AccessKey, account.Secret)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get account: %v", err)
 	}
 
-	return nil, nil, ErrNoAvailableBuckets
+	exists, err := oRepo.IsBucketExist(ctx, st.Bucket)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get account: %v", err)
+	}
+
+	if !exists {
+		return nil, nil, fmt.Errorf("failed to get account: %v", err)
+	}
+
+	return account, provider, ErrAccountNotFound
 }
 
 type ReplicationWorker struct {

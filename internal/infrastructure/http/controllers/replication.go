@@ -6,6 +6,6 @@ type ReplicateInput struct {
 }
 
 type Storage struct {
-	ProviderID string `json:"provider_id"`
-	Bucket     string `json:"bucket"`
+	AccountID string `json:"account_id"`
+	Bucket    string `json:"bucket"`
 }

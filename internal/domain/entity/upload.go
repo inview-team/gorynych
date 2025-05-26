@@ -2,10 +2,6 @@ package entity
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"fmt"
-	"io"
 )
 
 type Upload struct {
@@ -24,17 +20,8 @@ type UploadPart struct {
 }
 
 type Storage struct {
-	ProviderID string
-	Bucket     string
-}
-
-func NewStorageID() string {
-	id := make([]byte, 16)
-	_, err := io.ReadFull(rand.Reader, id)
-	if err != nil {
-		fmt.Print("failed to generate id")
-	}
-	return hex.EncodeToString(id)
+	AccountID string
+	Bucket    string
 }
 
 type UploadStatus int

@@ -23,8 +23,10 @@ func CreateUpload(s *service.UploadService) http.Handler {
 		}
 
 		meta := controllers.NewMetadata(r.Header.Get("Upload-Metadata"))
+		account := r.Header.Get("Upload-Account")
+		bucket := r.Header.Get("Upload-Bucket")
 
-		id, err := s.CreateUpload(ctx, size, meta)
+		id, err := s.CreateUpload(ctx, size, meta, account, bucket)
 		if err != nil {
 			http.Error(w, "", http.StatusInternalServerError)
 		}

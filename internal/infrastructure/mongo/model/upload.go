@@ -15,8 +15,8 @@ type Upload struct {
 }
 
 type Storage struct {
-	ProviderID string `bson:"provider_id"`
-	Bucket     string `bson:"bucket"`
+	AccountID string `bson:"account_id"`
+	Bucket    string `bson:"bucket"`
 }
 
 type UploadPart struct {
@@ -36,8 +36,8 @@ func NewUpload(upload *entity.Upload) *Upload {
 		Size:     upload.Size,
 		Offset:   upload.Offset,
 		Storage: Storage{
-			ProviderID: upload.Storage.ProviderID,
-			Bucket:     upload.Storage.Bucket,
+			AccountID: upload.Storage.AccountID,
+			Bucket:    upload.Storage.Bucket,
 		},
 		Parts:  parts,
 		Status: int(upload.Status),
@@ -57,8 +57,8 @@ func (m *Upload) ToEntity() *entity.Upload {
 		Size:     m.Size,
 		Offset:   m.Offset,
 		Storage: entity.Storage{
-			ProviderID: m.Storage.ProviderID,
-			Bucket:     m.Storage.Bucket,
+			AccountID: m.Storage.AccountID,
+			Bucket:    m.Storage.Bucket,
 		},
 		Parts:  parts,
 		Status: status,
